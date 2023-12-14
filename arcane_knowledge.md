@@ -1,5 +1,5 @@
 # Arcane Knowledge
-This is a store of knowledge that is not well documented for WebAssembly, for which I have had to guess at, either through reversing it from a dump or from reading through multiple second hand sources.  
+This is a store of knowledge that is not well documented for WebAssembly (or that I personally found confusing), for which I have had to guess at, either through reversing it from a dump or from reading through multiple second hand sources.  
 
 ## unsized values
 Some values, such as the length of a section, are not of a specific size. They can be any number of bytes, I guess for the purpose of limiting the size of the final binary. For these values, they highest bit in a byte tells you if you need to read another value. For example, if you have `0x8a01`, then, looking at the bytes:  
@@ -13,6 +13,11 @@ final value:
 0|0|0|0 0|0|0|1 0|0|0|0 1|0|1|0        ---> 0x10A
                 ^ information bit unset
 ``` 
+
+Some places where these "unsized values" are used:
+- The size of sections
+- The number of items present in a section
+- (i64|i32).const. This does not apply to float constants, those are a fixed 32 or 64 bits.
 
 ## global data structure
 ```
