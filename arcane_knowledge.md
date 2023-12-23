@@ -44,3 +44,7 @@ This is one global definition. The first byte is the type. The encoding that I'v
 This will be updated as I look at dumps from more examples.  
 The second byte tells us whether or not this global is mutable. The rest of this struct is an expression, up to the `end` instruction, and the top of the stack after the expression is evaluated is the value of the global.  
 The i32.const does not have anything to do with the mutability. That is the main reason this section was written for this document. 
+
+## knowledge needed
+The element section has something called "elemkind", which does not redirect to any docs.  
+It is assumed that a funcidx is an offset into the function table.

@@ -3,7 +3,7 @@ use std::{
     default,
     fmt::Debug,
     fs::{self, File},
-    io::{Error, Read},
+    io::{Error, Read, ErrorKind},
     mem, ptr,
 };
 
@@ -19,6 +19,7 @@ pub struct WasmTypeSection {
     section_code: u8,
     section_size: usize,
     num_types: usize,
+    function_signatures: Vec<WasmFunctionType>,
 }
 
 // Type field for function signatures
@@ -54,6 +55,7 @@ pub struct WasmImportSection {
     section_code: u8,
     section_size: usize,
     num_imports: usize,
+    imports: Vec<WasmImportHeader>
 }
 
 // Section describing imports
@@ -74,6 +76,7 @@ pub struct WasmFunctionSection {
     section_code: u8,
     section_size: usize,
     num_functions: usize,
+    function_signature_indexes: Vec<u8>
 }
 
 #[derive(Debug)]
@@ -81,6 +84,7 @@ pub struct WasmTableSection {
     section_code: u8,
     section_size: usize,
     num_tables: usize,
+    tables: Vec<WasmTable>,
 }
 #[derive(Debug)]
 pub struct WasmTable {
@@ -95,6 +99,7 @@ pub struct WasmMemorySection {
     section_code: u8,
     section_size: usize,
     num_memories: usize,
+    memories: Vec<WasmMemoryStruct>,
 }
 
 #[derive(Debug)]
@@ -109,12 +114,31 @@ pub struct WasmGlobalSection {
     section_code: u8,
     section_size: usize,
     num_globals: usize,
+    globals: Vec<WasmGlobal>,
 }
 #[derive(Debug, Clone, Copy)]
 pub struct WasmGlobal {
     wasm_type: WasmTypeAnnotation,
     mutability: u8,
     data: WasmTypedData,
+}
+
+#[derive(Debug)]
+pub struct WasmExportSection {
+    section_code: u8,
+    section_size: usize,
+    num_exports: usize,
+    exports: Vec<WasmExportHeader>
+}
+
+// Section describing imports
+#[derive(Debug)]
+pub struct WasmExportHeader {
+    // of size emscripten_memcp_len
+    export_name_len: usize,
+    export_name: Vec<u8>,
+    export_kind: u8,
+    export_signature_index: u8,
 }
 
 fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<WasmGlobal, Error> {
@@ -187,17 +211,12 @@ fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<W
 pub struct WasmFile {
     wasm_header: WasmHeader,
     type_section: WasmTypeSection,
-    function_signatures: Vec<WasmFunctionType>,
     import_section_header: WasmImportSection,
-    import_headers: Vec<WasmImportHeader>,
     function_section: WasmFunctionSection,
-    function_signature_indexes: Vec<u8>,
     table_section: WasmTableSection,
-    tables: Vec<WasmTable>,
     memory_section: WasmMemorySection,
-    memories: Vec<WasmMemoryStruct>,
     global_section: WasmGlobalSection,
-    globals: Vec<WasmGlobal>,
+    export_section: WasmExportSection,
 }
 
 #[derive(Debug)]
@@ -251,8 +270,168 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         }
         return Ok(out);
     }
-}
+    fn read_type_section(&mut self) -> Result<WasmTypeSection, Error> {
+    
+        // A section that describes the type signature of functions
+        let mut type_section: WasmTypeSection = WasmTypeSection {
+            section_code: self.read_sized::<u8>(0)?,
+            section_size: self.read_dynamic_int(0)?,
+            num_types: self.read_dynamic_int(0)?,
+            function_signatures: Vec::new()
+        };
+    
+        for _ in 0..type_section.num_types {
+            let mut sig: WasmFunctionType = WasmFunctionType {
+                func: 0,
+                num_params: 0,
+                params: Vec::new(),
+                num_results: 0,
+                results: Vec::new(),
+            };
+            sig.func = self.read_sized::<u8>(0)?;
+            assert_eq!(sig.func, 0x60, "Function format was incorrect");
+    
+            sig.num_params = self.read_dynamic_int(0)?;
+            sig.params = self.read_vector(WasmTypeAnnotation { _type: 0 }, sig.num_params)?;
+    
+            sig.num_results = self.read_dynamic_int(0)?;
+            sig.results = self.read_vector(WasmTypeAnnotation { _type: 0 }, sig.num_results)?;
+            type_section.function_signatures.push(sig)
+        }
+        Ok(type_section)
+    }
+    fn read_import_section(&mut self) -> Result<WasmImportSection, Error> {
+        // A section containing a description of things imported from other sources.
+        // Each import header has a name and a signature index
+        let mut import_section_header: WasmImportSection = WasmImportSection {
+            section_code: self.read_sized::<u8>(0)?,
+            section_size: self.read_dynamic_int(0)?,
+            num_imports: self.read_dynamic_int(0)?,
+            imports: Vec::new()
+        };
 
+        for _ in 0..import_section_header.num_imports {
+            let mut import: WasmImportHeader = WasmImportHeader {
+                mod_name_length: 0,
+                import_module_name: Vec::new(),
+                import_field_len: 0,
+                import_field: Vec::new(),
+                import_kind: 0,
+                import_signature_index: 0,
+            };
+            import.mod_name_length = self.read_dynamic_int(0)?;
+            import.import_module_name = self.read_vector(0, import.mod_name_length)?;
+            import.import_field_len = self.read_dynamic_int(0)?;
+            import.import_field = self.read_vector(0, import.import_field_len)?;
+            import.import_kind = self.read_sized(0)?;
+            import.import_signature_index = self.read_sized(0)?;
+            import_section_header.imports.push(import);
+        }
+        Ok(import_section_header)
+    }
+
+    fn read_function_section(&mut self) -> Result<WasmFunctionSection, Error> { 
+        let mut function_section: WasmFunctionSection = WasmFunctionSection {
+            section_code: self.read_sized::<u8>(0)?,
+            section_size: self.read_dynamic_int(0)?,
+            num_functions: self.read_dynamic_int(0)?,
+            function_signature_indexes: Vec::new()
+        };
+        for _ in 0..function_section.num_functions {
+            function_section.function_signature_indexes.push(self.read_sized(0)?);
+        }
+        Ok(function_section)
+    }
+
+    fn read_table_section(&mut self) -> Result<WasmTableSection, Error> { 
+        
+        let mut table_section: WasmTableSection = WasmTableSection {
+            section_code: self.read_sized::<u8>(0)?,
+            section_size: self.read_dynamic_int(0)?,
+            num_tables: self.read_dynamic_int(0)?,
+            tables: Vec::new()
+        };
+
+        for _ in 0..table_section.num_tables {
+            let mut table: WasmTable = WasmTable {
+                funcref: 0,
+                limits_flags: 0,
+                limits_initial: 0,
+                limits_max: 0,
+            };
+            table.funcref = self.read_sized::<u8>(0)?;
+            table.limits_flags = self.read_sized::<u8>(0)?;
+            table.limits_initial = self.read_dynamic_int(0)?;
+            table.limits_max = self.read_dynamic_int(0)?;
+            table_section.tables.push(table);
+        }
+
+        Ok(table_section)
+    }
+    
+    fn read_memory_section(&mut self) -> Result<WasmMemorySection, Error> { 
+        let mut memory_section: WasmMemorySection = WasmMemorySection {
+            section_code: self.read_sized::<u8>(0)?,
+            section_size: self.read_dynamic_int(0)?,
+            num_memories: self.read_dynamic_int(0)?,
+            memories: Vec::new()
+        };
+    
+        for _ in 0..memory_section.num_memories {
+            let mut memory: WasmMemoryStruct = WasmMemoryStruct {
+                limits_flags: 0,
+                limits_initial: 0,
+                limits_max: 0,
+            };
+            memory.limits_flags = self.read_sized::<u8>(0)?;
+            memory.limits_initial = self.read_dynamic_int(0)?;
+            memory.limits_max = self.read_dynamic_int(0)?;
+            memory_section.memories.push(memory);
+        }
+        Ok(memory_section)
+    }
+    
+    fn read_global_section(&mut self) -> Result<WasmGlobalSection, Error> {     
+        let mut global_section = WasmGlobalSection {
+            section_code: self.read_sized::<u8>(0)?,
+            section_size: self.read_dynamic_int(0)?,
+            num_globals: self.read_dynamic_int(0)?,
+            globals: Vec::new()
+        };
+
+        for _ in 0..global_section.num_globals {
+            let global = read_global(self)?;
+            println!("{:?}", global);
+            global_section.globals.push(global);
+        }
+        Ok(global_section)
+    }
+    fn read_export_section(&mut self) -> Result<WasmExportSection, Error> { 
+        
+        let mut export_section: WasmExportSection = WasmExportSection {
+            section_code: self.read_sized::<u8>(0)?,
+            section_size: self.read_dynamic_int(0)?,
+            num_exports: self.read_dynamic_int(0)?,
+            exports: Vec::new()
+        };
+
+        for _ in 0..export_section.num_exports {
+            let mut export: WasmExportHeader = WasmExportHeader {
+                export_name_len: 0,
+                export_name: Vec::new(),
+                export_kind: 0,
+                export_signature_index: 0,
+            };
+            export.export_name_len = self.read_dynamic_int(0)?;
+            export.export_name = self.read_vector(0, export.export_name_len)?;
+            export.export_kind = self.read_sized(0)?;
+            export.export_signature_index = self.read_sized(0)?;
+            export_section.exports.push(export);
+        }
+        Ok(export_section)
+    }
+    
+}
 // Reads a WASM file to a WasmFile struct.
 pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
     let mut state = WasmDeserializeState { buffer };
@@ -271,135 +450,38 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
         "Magic number was incorrect"
     );
 
-    // A section that describes the type signature of functions
-    let type_section: WasmTypeSection = WasmTypeSection {
-        section_code: state.read_sized::<u8>(0)?,
-        section_size: state.read_dynamic_int(0)?,
-        num_types: state.read_dynamic_int(0)?,
-    };
 
-    let mut function_signatures: Vec<WasmFunctionType> = Vec::new();
-    for _ in 0..type_section.num_types {
-        let mut sig: WasmFunctionType = WasmFunctionType {
-            func: 0,
-            num_params: 0,
-            params: Vec::new(),
-            num_results: 0,
-            results: Vec::new(),
-        };
-        sig.func = state.read_sized::<u8>(0)?;
-        assert_eq!(sig.func, 0x60, "Function format was incorrect");
+    let mut type_section = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
+    let mut import_section_header = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
+    let mut function_section = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
+    let mut table_section = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
+    let mut memory_section = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
+    let mut global_section = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
+    let mut export_section = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
 
-        sig.num_params = state.read_dynamic_int(0)?;
-        sig.params = state.read_vector(WasmTypeAnnotation { _type: 0 }, sig.num_params)?;
-
-        sig.num_results = state.read_dynamic_int(0)?;
-        sig.results = state.read_vector(WasmTypeAnnotation { _type: 0 }, sig.num_results)?;
-        function_signatures.push(sig)
-    }
-
-    // A section containing a description of things imported from other sources.
-    // Each import header has a name and a signature index
-    let import_section_header: WasmImportSection = WasmImportSection {
-        section_code: state.read_sized::<u8>(0)?,
-        section_size: state.read_dynamic_int(0)?,
-        num_imports: state.read_dynamic_int(0)?,
-    };
-
-    let mut import_headers: Vec<WasmImportHeader> = Vec::new();
-    for _ in 0..import_section_header.num_imports {
-        let mut import: WasmImportHeader = WasmImportHeader {
-            mod_name_length: 0,
-            import_module_name: Vec::new(),
-            import_field_len: 0,
-            import_field: Vec::new(),
-            import_kind: 0,
-            import_signature_index: 0,
-        };
-        import.mod_name_length = state.read_dynamic_int(0)?;
-        import.import_module_name = state.read_vector(0, import.mod_name_length)?;
-        import.import_field_len = state.read_dynamic_int(0)?;
-        import.import_field = state.read_vector(0, import.import_field_len)?;
-        import.import_kind = state.read_sized(0)?;
-        import.import_signature_index = state.read_sized(0)?;
-        import_headers.push(import);
-    }
-
-    let function_section: WasmFunctionSection = WasmFunctionSection {
-        section_code: state.read_sized::<u8>(0)?,
-        section_size: state.read_dynamic_int(0)?,
-        num_functions: state.read_dynamic_int(0)?,
-    };
-    let mut function_signature_indexes: Vec<u8> = Vec::new();
-    for _ in 0..function_section.num_functions {
-        function_signature_indexes.push(state.read_sized(0)?);
-    }
-
-    let table_section: WasmTableSection = WasmTableSection {
-        section_code: state.read_sized::<u8>(0)?,
-        section_size: state.read_dynamic_int(0)?,
-        num_tables: state.read_dynamic_int(0)?,
-    };
-
-    let mut tables: Vec<WasmTable> = Vec::new();
-    for _ in 0..table_section.num_tables {
-        let mut table: WasmTable = WasmTable {
-            funcref: 0,
-            limits_flags: 0,
-            limits_initial: 0,
-            limits_max: 0,
-        };
-        table.funcref = state.read_sized::<u8>(0)?;
-        table.limits_flags = state.read_sized::<u8>(0)?;
-        table.limits_initial = state.read_dynamic_int(0)?;
-        table.limits_max = state.read_dynamic_int(0)?;
-        tables.push(table);
-    }
-
-    let memory_section: WasmMemorySection = WasmMemorySection {
-        section_code: state.read_sized::<u8>(0)?,
-        section_size: state.read_dynamic_int(0)?,
-        num_memories: state.read_dynamic_int(0)?,
-    };
-
-    let mut memories: Vec<WasmMemoryStruct> = Vec::new();
-    for _ in 0..memory_section.num_memories {
-        let mut memory: WasmMemoryStruct = WasmMemoryStruct {
-            limits_flags: 0,
-            limits_initial: 0,
-            limits_max: 0,
-        };
-        memory.limits_flags = state.read_sized::<u8>(0)?;
-        memory.limits_initial = state.read_dynamic_int(0)?;
-        memory.limits_max = state.read_dynamic_int(0)?;
-        memories.push(memory);
-    }
-
-    let global_section = WasmGlobalSection {
-        section_code: state.read_sized::<u8>(0)?,
-        section_size: state.read_dynamic_int(0)?,
-        num_globals: state.read_dynamic_int(0)?,
-    };
-    let mut globals: Vec<WasmGlobal> = Vec::new();
-    for _ in 0..global_section.num_globals {
-        let global = read_global(&mut state)?;
-        println!("{:?}", global);
-        globals.push(global);
+    while let Ok(section_type) = state.read_sized::<u8>(0) {
+        match section_type {
+            0x01 => type_section = state.read_type_section(),
+            0x02 => import_section_header = state.read_import_section(),
+            0x03 => function_section = state.read_function_section(),
+            0x04 => table_section = state.read_table_section(),
+            0x05 => memory_section = state.read_memory_section(),
+            0x07 => global_section = state.read_global_section(),
+            0x09 => export_section = state.read_export_section(),
+            _ => {
+                break
+            }
+        }
     }
 
     return Ok(WasmFile {
         wasm_header,
-        type_section,
-        function_signatures,
-        import_section_header,
-        import_headers,
-        function_section,
-        function_signature_indexes,
-        table_section,
-        tables,
-        memory_section,
-        memories,
-        global_section,
-        globals,
+        type_section: type_section?,
+        import_section_header: import_section_header?,
+        function_section: function_section?,
+        table_section: table_section?,
+        memory_section: memory_section?,
+        global_section: global_section?,
+        export_section: export_section?,
     });
 }
