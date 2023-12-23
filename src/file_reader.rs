@@ -440,24 +440,52 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
     );
 
 
-    let mut type_section = Err(Error::new(ErrorKind::InvalidData, "1 Uninitialized"));
-    let mut import_section_header = Err(Error::new(ErrorKind::InvalidData, "2 Uninitialized"));
-    let mut function_section = Err(Error::new(ErrorKind::InvalidData, "3Uninitialized"));
-    let mut table_section = Err(Error::new(ErrorKind::InvalidData, "Uniniti alized"));
-    let mut memory_section = Err(Error::new(ErrorKind::InvalidData, "5 Uninitialized"));
-    let mut global_section = Err(Error::new(ErrorKind::InvalidData, "6 Uninitialized"));
-    let mut export_section = Err(Error::new(ErrorKind::InvalidData, "7 Uninitialized"));
+    let mut type_section = WasmTypeSection{
+        section_size: 0,
+        num_types: 0,
+        function_signatures: Vec::new(),
+    };
+    let mut import_section_header = WasmImportSection {
+        section_size: 0,
+        num_imports: 0,
+        imports: Vec::new(),
+    };
+    let mut function_section = WasmFunctionSection {
+        section_size: 0,
+        num_functions: 0,
+        function_signature_indexes: Vec::new(),
+    };
+    let mut table_section = WasmTableSection {
+        section_size: 0,
+        num_tables: 0,
+        tables: Vec::new(),
+    };
+    let mut memory_section = WasmMemorySection {
+        section_size: 0,
+        num_memories: 0,
+        memories: Vec::new(),
+    };
+    let mut global_section = WasmGlobalSection {
+        section_size: 0,
+        num_globals: 0,
+        globals: Vec::new(),
+    };
+    let mut export_section = WasmExportSection{
+        section_size: 0,
+        num_exports: 0,
+        exports: Vec::new(),
+    };
 
     while let Ok(section_type) = state.read_sized::<u8>(0) {
         println!("{}", section_type);
         match section_type {
-            0x01 => type_section = state.read_type_section(),
-            0x02 => import_section_header = state.read_import_section(),
-            0x03 => function_section = state.read_function_section(),
-            0x04 => table_section = state.read_table_section(),
-            0x05 => memory_section = state.read_memory_section(),
-            0x06 => global_section = state.read_global_section(),
-            0x07 => export_section = state.read_export_section(),
+            0x01 => type_section = state.read_type_section()?,
+            0x02 => import_section_header = state.read_import_section()?,
+            0x03 => function_section = state.read_function_section()?,
+            0x04 => table_section = state.read_table_section()?,
+            0x05 => memory_section = state.read_memory_section()?,
+            0x06 => global_section = state.read_global_section()?,
+            0x07 => export_section = state.read_export_section()?,
             _ => {
                 break
             }
@@ -466,12 +494,12 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
 
     return Ok(WasmFile {
         wasm_header,
-        type_section: type_section?,
-        import_section_header: import_section_header?,
-        function_section: function_section?,
-        table_section: table_section?,
-        memory_section: memory_section?,
-        global_section: global_section?,
-        export_section: export_section?,
+        type_section,
+        import_section_header,
+        function_section,
+        table_section,
+        memory_section,
+        global_section,
+        export_section,
     });
 }
