@@ -16,7 +16,6 @@ pub struct WasmHeader {
 // Section containing function types?
 #[derive(Debug)]
 pub struct WasmTypeSection {
-    section_code: u8,
     section_size: usize,
     num_types: usize,
     function_signatures: Vec<WasmFunctionType>,
@@ -52,7 +51,7 @@ pub struct WasmFunctionType {
 // Metadata about import section
 #[derive(Debug)]
 pub struct WasmImportSection {
-    section_code: u8,
+    
     section_size: usize,
     num_imports: usize,
     imports: Vec<WasmImportHeader>
@@ -73,7 +72,7 @@ pub struct WasmImportHeader {
 
 #[derive(Debug)]
 pub struct WasmFunctionSection {
-    section_code: u8,
+    
     section_size: usize,
     num_functions: usize,
     function_signature_indexes: Vec<u8>
@@ -81,7 +80,7 @@ pub struct WasmFunctionSection {
 
 #[derive(Debug)]
 pub struct WasmTableSection {
-    section_code: u8,
+    
     section_size: usize,
     num_tables: usize,
     tables: Vec<WasmTable>,
@@ -96,7 +95,6 @@ pub struct WasmTable {
 
 #[derive(Debug)]
 pub struct WasmMemorySection {
-    section_code: u8,
     section_size: usize,
     num_memories: usize,
     memories: Vec<WasmMemoryStruct>,
@@ -111,7 +109,6 @@ pub struct WasmMemoryStruct {
 
 #[derive(Debug)]
 pub struct WasmGlobalSection {
-    section_code: u8,
     section_size: usize,
     num_globals: usize,
     globals: Vec<WasmGlobal>,
@@ -125,7 +122,6 @@ pub struct WasmGlobal {
 
 #[derive(Debug)]
 pub struct WasmExportSection {
-    section_code: u8,
     section_size: usize,
     num_exports: usize,
     exports: Vec<WasmExportHeader>
@@ -274,7 +270,6 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     
         // A section that describes the type signature of functions
         let mut type_section: WasmTypeSection = WasmTypeSection {
-            section_code: self.read_sized::<u8>(0)?,
             section_size: self.read_dynamic_int(0)?,
             num_types: self.read_dynamic_int(0)?,
             function_signatures: Vec::new()
@@ -304,7 +299,6 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         // A section containing a description of things imported from other sources.
         // Each import header has a name and a signature index
         let mut import_section_header: WasmImportSection = WasmImportSection {
-            section_code: self.read_sized::<u8>(0)?,
             section_size: self.read_dynamic_int(0)?,
             num_imports: self.read_dynamic_int(0)?,
             imports: Vec::new()
@@ -332,7 +326,6 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
 
     fn read_function_section(&mut self) -> Result<WasmFunctionSection, Error> { 
         let mut function_section: WasmFunctionSection = WasmFunctionSection {
-            section_code: self.read_sized::<u8>(0)?,
             section_size: self.read_dynamic_int(0)?,
             num_functions: self.read_dynamic_int(0)?,
             function_signature_indexes: Vec::new()
@@ -346,7 +339,6 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     fn read_table_section(&mut self) -> Result<WasmTableSection, Error> { 
         
         let mut table_section: WasmTableSection = WasmTableSection {
-            section_code: self.read_sized::<u8>(0)?,
             section_size: self.read_dynamic_int(0)?,
             num_tables: self.read_dynamic_int(0)?,
             tables: Vec::new()
@@ -371,7 +363,6 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     
     fn read_memory_section(&mut self) -> Result<WasmMemorySection, Error> { 
         let mut memory_section: WasmMemorySection = WasmMemorySection {
-            section_code: self.read_sized::<u8>(0)?,
             section_size: self.read_dynamic_int(0)?,
             num_memories: self.read_dynamic_int(0)?,
             memories: Vec::new()
@@ -393,7 +384,6 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     
     fn read_global_section(&mut self) -> Result<WasmGlobalSection, Error> {     
         let mut global_section = WasmGlobalSection {
-            section_code: self.read_sized::<u8>(0)?,
             section_size: self.read_dynamic_int(0)?,
             num_globals: self.read_dynamic_int(0)?,
             globals: Vec::new()
@@ -409,7 +399,6 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     fn read_export_section(&mut self) -> Result<WasmExportSection, Error> { 
         
         let mut export_section: WasmExportSection = WasmExportSection {
-            section_code: self.read_sized::<u8>(0)?,
             section_size: self.read_dynamic_int(0)?,
             num_exports: self.read_dynamic_int(0)?,
             exports: Vec::new()
@@ -451,23 +440,24 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
     );
 
 
-    let mut type_section = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
-    let mut import_section_header = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
-    let mut function_section = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
-    let mut table_section = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
-    let mut memory_section = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
-    let mut global_section = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
-    let mut export_section = Err(Error::new(ErrorKind::InvalidData, "Uninitialized"));
+    let mut type_section = Err(Error::new(ErrorKind::InvalidData, "1 Uninitialized"));
+    let mut import_section_header = Err(Error::new(ErrorKind::InvalidData, "2 Uninitialized"));
+    let mut function_section = Err(Error::new(ErrorKind::InvalidData, "3Uninitialized"));
+    let mut table_section = Err(Error::new(ErrorKind::InvalidData, "Uniniti alized"));
+    let mut memory_section = Err(Error::new(ErrorKind::InvalidData, "5 Uninitialized"));
+    let mut global_section = Err(Error::new(ErrorKind::InvalidData, "6 Uninitialized"));
+    let mut export_section = Err(Error::new(ErrorKind::InvalidData, "7 Uninitialized"));
 
     while let Ok(section_type) = state.read_sized::<u8>(0) {
+        println!("{}", section_type);
         match section_type {
             0x01 => type_section = state.read_type_section(),
             0x02 => import_section_header = state.read_import_section(),
             0x03 => function_section = state.read_function_section(),
             0x04 => table_section = state.read_table_section(),
             0x05 => memory_section = state.read_memory_section(),
-            0x07 => global_section = state.read_global_section(),
-            0x09 => export_section = state.read_export_section(),
+            0x06 => global_section = state.read_global_section(),
+            0x07 => export_section = state.read_export_section(),
             _ => {
                 break
             }
