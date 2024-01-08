@@ -115,7 +115,7 @@ print('const INSTRS: [InstrInfo; 255] = [')
 for i in range(0, 256):
     if i in ops_int.keys():
         item = ops_int[i]
-        print('    InstrInfo{instr: 0x%02x, name: "%s", in_type: Type::%s, out_type: Type::%s},' % (i, item[0], item[2][1].value[2], item[2][0].value[2]))
+        print('    InstrInfo{instr: 0x%02x, name: "%s", in_type: Type::%s, out_type: Type::%s, has_arg: %s},' % (i, item[0], item[2][1].value[2], item[2][0].value[2], "true" if item[1] else "false"))
     else:
-        print('    InstrInfo{instr: 0x%02x, name: "", in_type: Type::Void, out_type: Type::Void},' % i)
+        print('    InstrInfo{instr: 0x%02x, name: "", in_type: Type::Void, out_type: Type::Void, has_arg: false},' % i)
 print('];')

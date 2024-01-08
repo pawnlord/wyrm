@@ -1,4 +1,4 @@
-# wasp
+# wyrm
 WASM Decompiler
 
 ## Goals

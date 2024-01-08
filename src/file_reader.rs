@@ -3,9 +3,11 @@ use std::{
     default,
     fmt::Debug,
     fs::{self, File},
-    io::{Error, Read, ErrorKind},
-    mem, ptr,
+    io::{Error, Read, ErrorKind, self},
+    mem, ptr, arch::x86_64::_t1mskc_u32, f32::consts::E,
 };
+
+use crate::wasm_model::{self, WasmExpr, ExprSeg, INSTRS, Type, get_instr};
 
 #[derive(Debug)]
 pub struct WasmHeader {
@@ -127,6 +129,24 @@ pub struct WasmExportSection {
     exports: Vec<WasmExportHeader>
 }
 
+#[derive(Debug)]
+pub enum WasmRefType {
+    FuncRef,
+    Externref
+}
+
+pub fn byte_to_reftype(byte: u8) -> Result<WasmRefType, Error> {
+    match byte {
+        0x70 => Ok(WasmRefType::FuncRef),
+        0x6F => Ok(WasmRefType::FuncRef),
+        
+        _ => {
+            Err(Error::new(ErrorKind::InvalidData, format!("Invalid RefType byte: {:?}", byte)))
+        }
+    }
+}
+
+
 // Section describing imports
 #[derive(Debug)]
 pub struct WasmExportHeader {
@@ -136,6 +156,34 @@ pub struct WasmExportHeader {
     export_kind: u8,
     export_signature_index: u8,
 }
+
+#[derive(Debug)]
+pub struct WasmElemSection {
+    section_size: usize,
+    num_elems: usize,
+    elems: Vec<WasmElem>
+}
+
+#[derive(Debug)]
+pub struct AcvtiveStruct {
+    pub table: u32, 
+    pub offset_expr: WasmExpr
+}
+
+#[derive(Debug)]
+pub enum WasmElemMode {
+    Passive,
+    Active(AcvtiveStruct),
+    Declarative
+}
+
+#[derive(Debug)]
+pub struct WasmElem {
+    _type: WasmRefType,
+    init: WasmExpr,
+    mode: WasmElemMode
+}
+
 
 fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<WasmGlobal, Error> {
     let mut global: WasmGlobal = WasmGlobal {
@@ -213,6 +261,7 @@ pub struct WasmFile {
     memory_section: WasmMemorySection,
     global_section: WasmGlobalSection,
     export_section: WasmExportSection,
+    elem_section: WasmElemSection,
 }
 
 #[derive(Debug)]
@@ -266,6 +315,58 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         }
         return Ok(out);
     }
+
+    // Read in a vector of objects of which we know the size
+    fn read_vector_dynamic(
+        &mut self,
+        num_elements: usize,
+    ) -> Result<Vec<usize>, Error> {
+        let mut out = Vec::<usize>::new();
+        for _ in 0..num_elements {
+            out.push(self.read_dynamic_int(0)?);
+        }
+        return Ok(out);
+    }
+
+    fn read_expr(&mut self) -> Result<WasmExpr, Error>  {
+        let mut expr = Vec::<ExprSeg>::new();
+        while let Ok(byte) = self.read_sized::<u8>(0) {
+            // print!("byte: {byte:?}\n");
+            let info = wasm_model::INSTRS[byte as usize];
+            expr.push(ExprSeg::Instr(info));
+            // print!("instr: {:?}\n", info.name);
+            if info.has_arg {
+                match info.out_type {
+                    Type::F32 => {
+                        expr.push(ExprSeg::Float32(self.read_sized(0.0)?));
+                    }
+                    Type::F64 => {
+                        expr.push(ExprSeg::Float64(self.read_sized(0.0)?));
+                    }
+                    // Number
+                    _ => {
+                        let mut num: u64 = 0;
+                        let mut i = 0;
+                        while let Ok(byte) = self.read_sized::<u8>(0) {
+                            num += (byte as u64 & 0x7F) << (i*8); 
+                            i += 1;
+                            if (byte & 0x80) == 0 || i > 7 {
+                                break;
+                            }
+                        }
+                        // print!("num: {num:?}\n");
+                        expr.push(ExprSeg::Int(num));
+                    }
+                }
+            }
+            if byte == 0x0b {
+                break;
+            }
+        }
+        Ok(WasmExpr {expr})
+
+    }
+
     fn read_type_section(&mut self) -> Result<WasmTypeSection, Error> {
     
         // A section that describes the type signature of functions
@@ -419,6 +520,108 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         }
         Ok(export_section)
     }
+
+    fn create_elem_expr(ys: Vec<usize>) -> WasmExpr {
+        let expr = ys.iter().flat_map(|y| {
+            vec![
+                ExprSeg::Instr(get_instr("ref.func").unwrap()),
+                ExprSeg::Int(*y as u64),
+                ExprSeg::Instr(get_instr("end").unwrap()),
+            ]
+        }).collect();
+
+        WasmExpr {expr}
+    }
+
+    fn read_elem(&mut self) -> Result<WasmElem, Error> {
+        let id = self.read_sized::<u8>(0)? as u32;
+        let _type: WasmRefType;
+        let mut init: WasmExpr;
+        let mode: WasmElemMode;
+        match id {
+            0 => {
+                let e = self.read_expr()?;
+                let y_size = self.read_dynamic_int(0)?;
+                let ys = self.read_vector_dynamic(y_size)?;
+                Ok(WasmElem{
+                    mode: WasmElemMode::Active(AcvtiveStruct {table: 0, offset_expr: e}),
+                    _type: WasmRefType::FuncRef,
+                    init: Self::create_elem_expr(ys),
+                })
+            }
+            1 => {
+                let et = self.read_sized::<u8>(0)?;
+                let y_size = self.read_dynamic_int(0)?;
+                let ys = self.read_vector_dynamic(y_size)?;
+                
+                Ok(WasmElem{
+                    mode: WasmElemMode::Passive,
+                    _type: byte_to_reftype(et)?,
+                    init: Self::create_elem_expr(ys),
+                })
+            }
+            2 => {
+                let x = self.read_dynamic_int(0)?;
+                let e = self.read_expr()?;
+                let et = self.read_sized::<u8>(0)?;
+                let y_size = self.read_dynamic_int(0)?;
+                let ys = self.read_vector_dynamic(y_size)?;
+
+                Ok(WasmElem{
+                    mode: WasmElemMode::Active(AcvtiveStruct {table: x as u32, offset_expr: e}),
+                    _type: byte_to_reftype(et)?,
+                    init: Self::create_elem_expr(ys),
+                })               
+            }
+            3 => {
+                let et = self.read_sized::<u8>(0)?;
+                let y_size = self.read_dynamic_int(0)?;
+                let ys = self.read_vector_dynamic(y_size)?;
+
+                Ok(WasmElem{
+                    mode: WasmElemMode::Declarative,
+                    _type: byte_to_reftype(et)?,          
+                    init: Self::create_elem_expr(ys)
+                })               
+            }
+            4 => {
+                todo!()
+            }
+            5 => {
+                mode = WasmElemMode::Passive;
+                
+                todo!()
+            }
+            6 => {
+                todo!()
+                
+            }
+            7 => {
+                mode = WasmElemMode::Declarative;
+
+                todo!()
+            }
+            _ => {
+                return Err(Error::new(ErrorKind::InvalidData, "Elem had invalid type"));
+            }
+        }
+        
+
+    }
+
+    fn read_elem_section(&mut self) -> Result<WasmElemSection, Error> {
+        
+        let mut elem_section: WasmElemSection = WasmElemSection {
+            section_size: self.read_dynamic_int(0)?,
+            num_elems: self.read_dynamic_int(0)?,
+            elems: Vec::new()
+        };
+
+        for _ in 0..elem_section.num_elems {
+            elem_section.elems.push(self.read_elem()?);
+        }
+        Ok(elem_section)
+    }
     
 }
 // Reads a WASM file to a WasmFile struct.
@@ -475,6 +678,11 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
         num_exports: 0,
         exports: Vec::new(),
     };
+    let mut elem_section = WasmElemSection{
+        section_size: 0,
+        num_elems: 0,
+        elems: Vec::new(),
+    };
 
     while let Ok(section_type) = state.read_sized::<u8>(0) {
         println!("{}", section_type);
@@ -486,6 +694,7 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
             0x05 => memory_section = state.read_memory_section()?,
             0x06 => global_section = state.read_global_section()?,
             0x07 => export_section = state.read_export_section()?,
+            0x09 => elem_section = state.read_elem_section()?,
             _ => {
                 break
             }
@@ -501,5 +710,6 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
         memory_section,
         global_section,
         export_section,
+        elem_section, 
     });
 }
