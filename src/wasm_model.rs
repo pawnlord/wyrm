@@ -70,7 +70,7 @@ impl Debug for InstrInfo {
 pub const INSTRS: [InstrInfo; 256] = [
     InstrInfo{instr: 0x00, name: "unreachable", in_type: Type::Void, out_type: Type::Void, has_arg: true},
     InstrInfo{instr: 0x01, name: "alignment", in_type: Type::Void, out_type: Type::Void, has_arg: true},
-    InstrInfo{instr: 0x02, name: "alignment", in_type: Type::Void, out_type: Type::Void, has_arg: true},
+    InstrInfo{instr: 0x02, name: "block", in_type: Type::Void, out_type: Type::Void, has_arg: false},
     InstrInfo{instr: 0x03, name: "loop", in_type: Type::Void, out_type: Type::Void, has_arg: false},
     InstrInfo{instr: 0x04, name: "if", in_type: Type::Void, out_type: Type::Void, has_arg: true},
     InstrInfo{instr: 0x05, name: "else", in_type: Type::Void, out_type: Type::Void, has_arg: true},

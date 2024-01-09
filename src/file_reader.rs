@@ -165,6 +165,20 @@ pub struct WasmElemSection {
 }
 
 #[derive(Debug)]
+pub struct WasmCodeSection {
+    section_size: usize,
+    num_functions: usize,
+    functions: Vec<WasmFunction>
+}
+
+
+#[derive(Debug)]
+pub struct WasmDataCountSection {
+    section_size: usize,
+    datacount: usize
+}
+
+#[derive(Debug)]
 pub struct AcvtiveStruct {
     pub table: u32, 
     pub offset_expr: WasmExpr
@@ -182,6 +196,33 @@ pub struct WasmElem {
     _type: WasmRefType,
     init: WasmExpr,
     mode: WasmElemMode
+}
+#[derive(Debug, Clone, Copy)]
+pub struct WasmLocal{
+    _type: u8
+}
+
+pub struct WasmFunction {
+    size: usize,
+    _type: Option<WasmFunctionType>,
+    local_types: Vec<(u8, usize)>,
+    locals: Vec<WasmLocal>,
+    body: WasmExpr,
+}
+
+impl Debug for WasmFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WasmFunction")
+        .field("size", &self.size)
+        .field("_type", &self._type)
+        .field("locals", &self.local_types.iter()
+            .map(|local_type| {
+                format!("[{:}; {:}]", local_type.0, local_type.1)}
+            ).collect::<Vec<String>>()
+            .join(", "))
+        .field("body", &self.body)
+        .finish()
+    }
 }
 
 
@@ -262,6 +303,8 @@ pub struct WasmFile {
     global_section: WasmGlobalSection,
     export_section: WasmExportSection,
     elem_section: WasmElemSection,
+    code_section: WasmCodeSection,
+    data_count_section: WasmDataCountSection,
 }
 
 #[derive(Debug)]
@@ -330,11 +373,11 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
 
     fn read_expr(&mut self) -> Result<WasmExpr, Error>  {
         let mut expr = Vec::<ExprSeg>::new();
+        let mut level: i32 = 0;
         while let Ok(byte) = self.read_sized::<u8>(0) {
             // print!("byte: {byte:?}\n");
             let info = wasm_model::INSTRS[byte as usize];
             expr.push(ExprSeg::Instr(info));
-            // print!("instr: {:?}\n", info.name);
             if info.has_arg {
                 match info.out_type {
                     Type::F32 => {
@@ -359,8 +402,16 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                     }
                 }
             }
+            if byte == 0x02 {
+                print!("instr: {:?} {:?}\n", info, level);
+                level += 1;
+            }
             if byte == 0x0b {
-                break;
+                print!("instr: {:?} {:?}\n", info, level);
+                level -= 1;
+                if level < 0 {
+                    break;
+                }
             }
         }
         Ok(WasmExpr {expr})
@@ -623,6 +674,59 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         Ok(elem_section)
     }
     
+    fn read_data_count(&mut self) -> Result<WasmDataCountSection, Error> {
+        Ok(WasmDataCountSection {
+            section_size: self.read_dynamic_int(0)?,
+            datacount: self.read_dynamic_int(0)?,
+        })
+    }
+
+    fn read_locals(&mut self) -> Result<(Vec<WasmLocal>,  Vec<(u8, usize)>), Error> {
+        let num_decs = self.read_dynamic_int(0)?;
+        
+        let mut local_types = Vec::<(u8, usize)>::new();
+        let mut locals = Vec::<WasmLocal>::new();
+        for _ in 0..num_decs {
+            let num_type = self.read_dynamic_int(0)?;
+            let _type = self.read_sized::<u8>(0)?;
+            let mut locals_of_type = (0.._type).map(|_| WasmLocal {
+                _type
+            }).collect();
+            local_types.push((_type, num_type));
+            locals.append(&mut locals_of_type);
+        }
+
+        Ok((locals, local_types))
+    }
+
+    fn read_function(&mut self) -> Result<WasmFunction, Error> {
+        let size = self.read_dynamic_int(0)?;
+        println!("size {}", size);
+        let (locals, local_types) = self.read_locals()?;
+        let body = self.read_expr()?; 
+        println!("real size {}", body.expr.len());
+        Ok(WasmFunction{
+            size,
+            _type: None,
+            local_types,
+            locals,
+            body
+        })        
+    }
+    
+    fn read_code_section(&mut self) -> Result<WasmCodeSection, Error> {
+        
+        let mut code_section: WasmCodeSection = WasmCodeSection {
+            section_size: self.read_dynamic_int(0)?,
+            num_functions: self.read_dynamic_int(0)?,
+            functions: vec![]
+        };
+
+        for _ in 0..code_section.num_functions {
+            code_section.functions.push(self.read_function()?);
+        }
+        Ok(code_section)
+    }
 }
 // Reads a WASM file to a WasmFile struct.
 pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
@@ -683,9 +787,18 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
         num_elems: 0,
         elems: Vec::new(),
     };
+    let mut data_count_section = WasmDataCountSection {
+        section_size: 0,
+        datacount: 0
+    };
+    let mut code_section = WasmCodeSection { 
+        section_size: 0, 
+        num_functions: 0, 
+        functions: vec![] 
+    };
 
     while let Ok(section_type) = state.read_sized::<u8>(0) {
-        println!("{}", section_type);
+        println!("{:x}", section_type);
         match section_type {
             0x01 => type_section = state.read_type_section()?,
             0x02 => import_section_header = state.read_import_section()?,
@@ -695,6 +808,9 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
             0x06 => global_section = state.read_global_section()?,
             0x07 => export_section = state.read_export_section()?,
             0x09 => elem_section = state.read_elem_section()?,
+            0x0a => code_section = state.read_code_section()?,
+            0x0b => todo!("Data section not done yet"),
+            0x0c => data_count_section = state.read_data_count()?,
             _ => {
                 break
             }
@@ -711,5 +827,7 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
         global_section,
         export_section,
         elem_section, 
+        code_section,
+        data_count_section,
     });
 }
