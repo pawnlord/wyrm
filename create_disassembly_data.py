@@ -11,10 +11,19 @@ wabt_path = "../wabt/bin/wat2wasm"
 lines = []
 def get_lines_file(f):
     global lines
+
+    if os.path.isfile(f +".cache"):
+        with open(f + ".cache") as file:
+            lines.extend(file.readlines())
+            return
+
     proc = subprocess.Popen([wabt_path, f, "-v", "--output=a.wasm"], stderr=subprocess.PIPE)
     contents = proc.stderr.read().decode()
     functions = "\n".join(contents.split("\n; function ")[1:-2])
     lines += functions.split('\n')
+
+    with open(f + ".cache", "w") as file:
+        file.write("\n".join(lines)) 
 
 def get_lines(dir):
     for filename in os.listdir(dir):
@@ -28,7 +37,9 @@ def get_lines(dir):
 # get_lines("binaryen_tests")
 get_lines_file("earthplugin_web.wat")
 get_lines_file("snake.wat")
-lines.append("0001973: 00                                        ; func.ref")
+
+
+lines.append("0001973: d2                                        ; func.ref")
 lines.append("0001973: 00                                        ; function index")
 
 text = "Scraped content from WASM"
@@ -56,6 +67,10 @@ def get_line_values(i, line):
         isInstr = not (" " in name or " " in value)
         isInstr &= name != "alignment"
         isInstr &= not name in ["i32", "i64", "f32", "f64"]
+
+        if name == "if":
+            print(line)
+            
         values = (True,
                 {
                     "value": value,
@@ -80,21 +95,20 @@ for i, line in enumerate(lines):
     else:
         add_alignment = False
 
-        success, prev_information = get_line_values(i, lines[i-1])
+        success, prev_information = get_line_values(i-1, lines[i-1])
         if not success:
             continue
 
         temp = i - 1
         while prev_information["isAlign"]:
+            temp -= 1
             add_alignment = True
             success, prev_information = get_line_values(temp, lines[temp])
-            temp -= 1
             if not success:
                 break
-
+        
         if not success:
             continue
-
         # It can't not be, we just went over that line in the previous iteration
         # If it isn't, then we are probably in a br_table
         if prev_information["value"] in ops:

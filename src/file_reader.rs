@@ -7,7 +7,7 @@ use std::{
     mem, ptr, arch::x86_64::_t1mskc_u32, f32::consts::E,
 };
 
-use crate::wasm_model::{self, WasmExpr, ExprSeg, INSTRS, Type, get_instr};
+use crate::wasm_model::{self, WasmExpr, ExprSeg, INSTRS, Prim, get_instr, get_edge_case, SpecialInstr, BrTableConst};
 
 #[derive(Debug)]
 pub struct WasmHeader {
@@ -378,16 +378,47 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             // print!("byte: {byte:?}\n");
             let info = wasm_model::INSTRS[byte as usize];
             expr.push(ExprSeg::Instr(info));
-            if info.has_arg {
+            // print!("instr: {:?} {:?}\n", info, level);
+            let special_case = get_edge_case(info);
+            if special_case == SpecialInstr::BrTable {
+                let num = self.read_dynamic_int(0)?;
+                let break_depths = self.read_vector_dynamic(num)?;
+                let default = self.read_dynamic_int(0)?;
+                expr.push(ExprSeg::BrTable(BrTableConst {
+                    break_depths,
+                    default
+                }));
+                continue;
+            }
+
+            if special_case == SpecialInstr::CallIndirect {
+                expr.push(ExprSeg::Instr(info));
+                expr.push(ExprSeg::Int(self.read_dynamic_int(0)? as u64));
+                expr.push(ExprSeg::Int(self.read_dynamic_int(0)? as u64));
+                continue;
+            }
+
+            if info.name == "" {
+                println!("instruction not supported {:#x}", info.instr);
+                todo!()
+            }
+            
+            if info.takes_align {
+                // println!("taking byte for {} ({:#x})", info.name, info.instr);
+                self.read_sized::<u8>(0)?;
+            }
+            
+            if info.has_const {
                 match info.out_type {
-                    Type::F32 => {
+                    Prim::F32 => {
                         expr.push(ExprSeg::Float32(self.read_sized(0.0)?));
                     }
-                    Type::F64 => {
+                    Prim::F64 => {
                         expr.push(ExprSeg::Float64(self.read_sized(0.0)?));
                     }
                     // Number
                     _ => {
+                        // println!("reading number");
                         let mut num: u64 = 0;
                         let mut i = 0;
                         while let Ok(byte) = self.read_sized::<u8>(0) {
@@ -402,12 +433,10 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                     }
                 }
             }
-            if byte == 0x02 {
-                print!("instr: {:?} {:?}\n", info, level);
+            if special_case == SpecialInstr::BeginBlock {
                 level += 1;
             }
-            if byte == 0x0b {
-                print!("instr: {:?} {:?}\n", info, level);
+            if special_case == SpecialInstr::EndBlock {
                 level -= 1;
                 if level < 0 {
                     break;
@@ -622,7 +651,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                     mode: WasmElemMode::Active(AcvtiveStruct {table: x as u32, offset_expr: e}),
                     _type: byte_to_reftype(et)?,
                     init: Self::create_elem_expr(ys),
-                })               
+                })
             }
             3 => {
                 let et = self.read_sized::<u8>(0)?;
@@ -689,9 +718,10 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         for _ in 0..num_decs {
             let num_type = self.read_dynamic_int(0)?;
             let _type = self.read_sized::<u8>(0)?;
-            let mut locals_of_type = (0.._type).map(|_| WasmLocal {
-                _type
-            }).collect();
+            let mut locals_of_type = 
+                (0.._type).map(
+                    |_| WasmLocal {_type}
+                ).collect();
             local_types.push((_type, num_type));
             locals.append(&mut locals_of_type);
         }
@@ -721,6 +751,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             num_functions: self.read_dynamic_int(0)?,
             functions: vec![]
         };
+
+        println!("num functions: {}", code_section.num_functions);
 
         for _ in 0..code_section.num_functions {
             code_section.functions.push(self.read_function()?);

@@ -3,3 +3,6 @@
 *.wat
 *.dump
 *.js
+
+*.pkl
+*.cache 
