@@ -173,6 +173,27 @@ pub struct WasmCodeSection {
 
 
 #[derive(Debug)]
+pub struct WasmDataSection {
+    section_size: usize,
+    num_data_segs: usize,
+    data_segs: Vec<WasmDataSeg>
+}
+
+#[derive(Debug)]
+pub struct WasmDataSegHeader {
+    header_flags: u8,
+    expr: WasmExpr,
+    data_size: usize,
+}
+
+#[derive(Debug)]
+pub struct WasmDataSeg {
+    header: WasmDataSegHeader,
+    data: Vec<u8>
+}
+
+
+#[derive(Debug)]
 pub struct WasmDataCountSection {
     section_size: usize,
     datacount: usize
@@ -304,6 +325,7 @@ pub struct WasmFile {
     export_section: WasmExportSection,
     elem_section: WasmElemSection,
     code_section: WasmCodeSection,
+    data_section: WasmDataSection,
     data_count_section: WasmDataCountSection,
 }
 
@@ -718,7 +740,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         Ok(elem_section)
     }
     
-    fn read_data_count(&mut self) -> Result<WasmDataCountSection, Error> {
+    fn read_data_count_section(&mut self) -> Result<WasmDataCountSection, Error> {
         Ok(WasmDataCountSection {
             section_size: self.read_dynamic_uint(0)?,
             datacount: self.read_dynamic_uint(0)?,
@@ -767,16 +789,34 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             functions: vec![]
         };
 
-        println!("num functions: {}", code_section.num_functions);
 
         for i in 0..code_section.num_functions {
-            println!{"function num: {}", i}
-            if i == 27 {
-                println!("pls brk");
-            }
             code_section.functions.push(self.read_function()?);
         }
         Ok(code_section)
+    }
+    fn read_data_section(&mut self) -> Result<WasmDataSection, Error> {
+        
+        let mut data_section: WasmDataSection = WasmDataSection {
+            section_size: self.read_dynamic_uint(0)?,
+            num_data_segs: self.read_dynamic_uint(0)?,
+            data_segs: vec![]
+        };
+
+
+        for i in 0..data_section.num_data_segs {
+            let header_flags = self.read_sized::<u8>(0)?;
+            let expr = self.read_expr()?;
+            let data_size = self.read_dynamic_uint(0)?;
+            let header = WasmDataSegHeader  { header_flags, expr, data_size };
+
+            let data: Vec<u8> = self.read_vector(0, header.data_size)?;
+            data_section.data_segs.push(WasmDataSeg {
+                header,
+                data
+            });
+        }
+        Ok(data_section)
     }
 }
 // Reads a WASM file to a WasmFile struct.
@@ -847,6 +887,11 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
         num_functions: 0, 
         functions: vec![] 
     };
+    let mut data_section = WasmDataSection { 
+        section_size: 0, 
+        num_data_segs: 0, 
+        data_segs: vec![] 
+    };
 
     while let Ok(section_type) = state.read_sized::<u8>(0) {
         println!("{:x}", section_type);
@@ -860,8 +905,8 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
             0x07 => export_section = state.read_export_section()?,
             0x09 => elem_section = state.read_elem_section()?,
             0x0a => code_section = state.read_code_section()?,
-            0x0b => todo!("Data section not done yet"),
-            0x0c => data_count_section = state.read_data_count()?,
+            0x0b => data_section = state.read_data_section()?,
+            0x0c => data_count_section = state.read_data_count_section()?,
             _ => {
                 break
             }
@@ -879,6 +924,7 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
         export_section,
         elem_section, 
         code_section,
+        data_section,
         data_count_section,
     });
 }
