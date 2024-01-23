@@ -7,7 +7,7 @@ use std::{
     mem, ptr, arch::x86_64::_t1mskc_u32, f32::consts::E,
 };
 
-use crate::wasm_model::{self, WasmExpr, ExprSeg, INSTRS, Prim, get_instr, get_edge_case, SpecialInstr, BrTableConst};
+use crate::wasm_model::{self, WasmExpr, ExprSeg, INSTRS, Prim, get_instr, get_edge_case, SpecialInstr, BrTableConst, calculate_body_len};
 
 #[derive(Debug)]
 pub struct WasmHeader {
@@ -268,7 +268,7 @@ fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<W
                 0x42 as u8,
                 "Global is not a i32 const value"
             );
-            global.data = WasmTypedData::I64(state.read_dynamic_int(0)? as i64);
+            global.data = WasmTypedData::I64(state.read_dynamic_uint(0)? as i64);
         }
         // i32
         WasmTypeAnnotation { _type: 0x7f } => {
@@ -277,7 +277,7 @@ fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<W
                 0x41 as u8,
                 "Global is not a i32 const value"
             );
-            global.data = WasmTypedData::I32(state.read_dynamic_int(0)? as i32);
+            global.data = WasmTypedData::I32(state.read_dynamic_uint(0)? as i32);
         }
         _ => panic!(
             "No suitable type to read for global. Global struct: {:?}. State: {:?}",
@@ -330,21 +330,45 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     }
 
     // Read an int of dynamic size. See arcane_knowledge.md/#unsized_values for more information
-    fn read_dynamic_int(&mut self, default: usize) -> Result<usize, Error> {
+    fn read_dynamic_uint(&mut self, default: usize) -> Result<usize, Error> {
         let mut out: usize = default.clone();
         let mut buffer: [u8; 1] = [0];
 
         self.buffer.read_exact(&mut buffer)?;
         out += (buffer[0] & 0x7F) as usize;
-        let mut bytes = 1;
-        while buffer[0] & 0x80 != 0 && bytes < 8 {
+        let mut bits = 7;
+        while buffer[0] & 0x80 != 0 && bits < 64 {
             self.buffer.read_exact(&mut buffer)?;
-            out += ((buffer[0] & 0x7F) as usize) << (7 * bytes);
-            bytes += 1;
+            out += ((buffer[0] & 0x7F & (!(1 << std::cmp::min(64 - bits, 7)))) as usize) << (7 * (bits / 7));
+            bits += 7;
         }
 
         return Ok(out);
     }
+
+    fn read_dynamic_int(&mut self, default: usize) -> Result<i64, Error> {
+        let mut out: usize = default.clone();
+        let mut buffer: [u8; 1] = [0];
+
+        self.buffer.read_exact(&mut buffer)?;
+        out += (buffer[0] & 0x7F) as usize;
+        let mut bits = 7;
+        while buffer[0] & 0x80 != 0 && bits < 64 {
+            self.buffer.read_exact(&mut buffer)?;
+            out += ((buffer[0] & 0x7F & (std::cmp::min(64 - bits, 7))) as usize) << (7 * (bits / 7));
+            bits += 7;
+        }
+        if buffer[0] & 0x80 != 0 {
+            return Err(Error::new(ErrorKind::InvalidData, "what"));
+        }
+        if buffer[0] & 0x40 != 0  && bits < 64{
+            return Ok((out | (!0 << bits)) as i64);
+        }
+
+        return Ok(out as i64);
+
+    }
+
 
     // Read in a vector of objects of which we know the size
     fn read_vector<U: Sized + Clone>(
@@ -366,7 +390,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     ) -> Result<Vec<usize>, Error> {
         let mut out = Vec::<usize>::new();
         for _ in 0..num_elements {
-            out.push(self.read_dynamic_int(0)?);
+            out.push(self.read_dynamic_uint(0)?);
         }
         return Ok(out);
     }
@@ -381,9 +405,9 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             // print!("instr: {:?} {:?}\n", info, level);
             let special_case = get_edge_case(info);
             if special_case == SpecialInstr::BrTable {
-                let num = self.read_dynamic_int(0)?;
+                let num = self.read_dynamic_uint(0)?;
                 let break_depths = self.read_vector_dynamic(num)?;
-                let default = self.read_dynamic_int(0)?;
+                let default = self.read_dynamic_uint(0)?;
                 expr.push(ExprSeg::BrTable(BrTableConst {
                     break_depths,
                     default
@@ -393,8 +417,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
 
             if special_case == SpecialInstr::CallIndirect {
                 expr.push(ExprSeg::Instr(info));
-                expr.push(ExprSeg::Int(self.read_dynamic_int(0)? as u64));
-                expr.push(ExprSeg::Int(self.read_dynamic_int(0)? as u64));
+                expr.push(ExprSeg::Int(self.read_dynamic_int(0)?));
+                expr.push(ExprSeg::Int(self.read_dynamic_int(0)?));
                 continue;
             }
 
@@ -418,18 +442,9 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                     }
                     // Number
                     _ => {
-                        // println!("reading number");
-                        let mut num: u64 = 0;
-                        let mut i = 0;
-                        while let Ok(byte) = self.read_sized::<u8>(0) {
-                            num += (byte as u64 & 0x7F) << (i*8); 
-                            i += 1;
-                            if (byte & 0x80) == 0 || i > 7 {
-                                break;
-                            }
-                        }
-                        // print!("num: {num:?}\n");
-                        expr.push(ExprSeg::Int(num));
+                        let num = self.read_dynamic_int(0)?;
+                        // println!("num: {}", num);
+                        expr.push(ExprSeg::Int(num ));
                     }
                 }
             }
@@ -451,8 +466,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     
         // A section that describes the type signature of functions
         let mut type_section: WasmTypeSection = WasmTypeSection {
-            section_size: self.read_dynamic_int(0)?,
-            num_types: self.read_dynamic_int(0)?,
+            section_size: self.read_dynamic_uint(0)?,
+            num_types: self.read_dynamic_uint(0)?,
             function_signatures: Vec::new()
         };
     
@@ -467,10 +482,10 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             sig.func = self.read_sized::<u8>(0)?;
             assert_eq!(sig.func, 0x60, "Function format was incorrect");
     
-            sig.num_params = self.read_dynamic_int(0)?;
+            sig.num_params = self.read_dynamic_uint(0)?;
             sig.params = self.read_vector(WasmTypeAnnotation { _type: 0 }, sig.num_params)?;
     
-            sig.num_results = self.read_dynamic_int(0)?;
+            sig.num_results = self.read_dynamic_uint(0)?;
             sig.results = self.read_vector(WasmTypeAnnotation { _type: 0 }, sig.num_results)?;
             type_section.function_signatures.push(sig)
         }
@@ -480,8 +495,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         // A section containing a description of things imported from other sources.
         // Each import header has a name and a signature index
         let mut import_section_header: WasmImportSection = WasmImportSection {
-            section_size: self.read_dynamic_int(0)?,
-            num_imports: self.read_dynamic_int(0)?,
+            section_size: self.read_dynamic_uint(0)?,
+            num_imports: self.read_dynamic_uint(0)?,
             imports: Vec::new()
         };
 
@@ -494,9 +509,9 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                 import_kind: 0,
                 import_signature_index: 0,
             };
-            import.mod_name_length = self.read_dynamic_int(0)?;
+            import.mod_name_length = self.read_dynamic_uint(0)?;
             import.import_module_name = self.read_vector(0, import.mod_name_length)?;
-            import.import_field_len = self.read_dynamic_int(0)?;
+            import.import_field_len = self.read_dynamic_uint(0)?;
             import.import_field = self.read_vector(0, import.import_field_len)?;
             import.import_kind = self.read_sized(0)?;
             import.import_signature_index = self.read_sized(0)?;
@@ -507,8 +522,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
 
     fn read_function_section(&mut self) -> Result<WasmFunctionSection, Error> { 
         let mut function_section: WasmFunctionSection = WasmFunctionSection {
-            section_size: self.read_dynamic_int(0)?,
-            num_functions: self.read_dynamic_int(0)?,
+            section_size: self.read_dynamic_uint(0)?,
+            num_functions: self.read_dynamic_uint(0)?,
             function_signature_indexes: Vec::new()
         };
         for _ in 0..function_section.num_functions {
@@ -520,8 +535,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     fn read_table_section(&mut self) -> Result<WasmTableSection, Error> { 
         
         let mut table_section: WasmTableSection = WasmTableSection {
-            section_size: self.read_dynamic_int(0)?,
-            num_tables: self.read_dynamic_int(0)?,
+            section_size: self.read_dynamic_uint(0)?,
+            num_tables: self.read_dynamic_uint(0)?,
             tables: Vec::new()
         };
 
@@ -534,8 +549,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             };
             table.funcref = self.read_sized::<u8>(0)?;
             table.limits_flags = self.read_sized::<u8>(0)?;
-            table.limits_initial = self.read_dynamic_int(0)?;
-            table.limits_max = self.read_dynamic_int(0)?;
+            table.limits_initial = self.read_dynamic_uint(0)?;
+            table.limits_max = self.read_dynamic_uint(0)?;
             table_section.tables.push(table);
         }
 
@@ -544,8 +559,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     
     fn read_memory_section(&mut self) -> Result<WasmMemorySection, Error> { 
         let mut memory_section: WasmMemorySection = WasmMemorySection {
-            section_size: self.read_dynamic_int(0)?,
-            num_memories: self.read_dynamic_int(0)?,
+            section_size: self.read_dynamic_uint(0)?,
+            num_memories: self.read_dynamic_uint(0)?,
             memories: Vec::new()
         };
     
@@ -556,8 +571,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                 limits_max: 0,
             };
             memory.limits_flags = self.read_sized::<u8>(0)?;
-            memory.limits_initial = self.read_dynamic_int(0)?;
-            memory.limits_max = self.read_dynamic_int(0)?;
+            memory.limits_initial = self.read_dynamic_uint(0)?;
+            memory.limits_max = self.read_dynamic_uint(0)?;
             memory_section.memories.push(memory);
         }
         Ok(memory_section)
@@ -565,8 +580,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     
     fn read_global_section(&mut self) -> Result<WasmGlobalSection, Error> {     
         let mut global_section = WasmGlobalSection {
-            section_size: self.read_dynamic_int(0)?,
-            num_globals: self.read_dynamic_int(0)?,
+            section_size: self.read_dynamic_uint(0)?,
+            num_globals: self.read_dynamic_uint(0)?,
             globals: Vec::new()
         };
 
@@ -580,8 +595,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     fn read_export_section(&mut self) -> Result<WasmExportSection, Error> { 
         
         let mut export_section: WasmExportSection = WasmExportSection {
-            section_size: self.read_dynamic_int(0)?,
-            num_exports: self.read_dynamic_int(0)?,
+            section_size: self.read_dynamic_uint(0)?,
+            num_exports: self.read_dynamic_uint(0)?,
             exports: Vec::new()
         };
 
@@ -592,7 +607,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                 export_kind: 0,
                 export_signature_index: 0,
             };
-            export.export_name_len = self.read_dynamic_int(0)?;
+            export.export_name_len = self.read_dynamic_uint(0)?;
             export.export_name = self.read_vector(0, export.export_name_len)?;
             export.export_kind = self.read_sized(0)?;
             export.export_signature_index = self.read_sized(0)?;
@@ -605,7 +620,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         let expr = ys.iter().flat_map(|y| {
             vec![
                 ExprSeg::Instr(get_instr("ref.func").unwrap()),
-                ExprSeg::Int(*y as u64),
+                ExprSeg::Int(*y as i64),
                 ExprSeg::Instr(get_instr("end").unwrap()),
             ]
         }).collect();
@@ -621,7 +636,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         match id {
             0 => {
                 let e = self.read_expr()?;
-                let y_size = self.read_dynamic_int(0)?;
+                let y_size = self.read_dynamic_uint(0)?;
                 let ys = self.read_vector_dynamic(y_size)?;
                 Ok(WasmElem{
                     mode: WasmElemMode::Active(AcvtiveStruct {table: 0, offset_expr: e}),
@@ -631,7 +646,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             }
             1 => {
                 let et = self.read_sized::<u8>(0)?;
-                let y_size = self.read_dynamic_int(0)?;
+                let y_size = self.read_dynamic_uint(0)?;
                 let ys = self.read_vector_dynamic(y_size)?;
                 
                 Ok(WasmElem{
@@ -641,10 +656,10 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                 })
             }
             2 => {
-                let x = self.read_dynamic_int(0)?;
+                let x = self.read_dynamic_uint(0)?;
                 let e = self.read_expr()?;
                 let et = self.read_sized::<u8>(0)?;
-                let y_size = self.read_dynamic_int(0)?;
+                let y_size = self.read_dynamic_uint(0)?;
                 let ys = self.read_vector_dynamic(y_size)?;
 
                 Ok(WasmElem{
@@ -655,7 +670,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             }
             3 => {
                 let et = self.read_sized::<u8>(0)?;
-                let y_size = self.read_dynamic_int(0)?;
+                let y_size = self.read_dynamic_uint(0)?;
                 let ys = self.read_vector_dynamic(y_size)?;
 
                 Ok(WasmElem{
@@ -692,8 +707,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     fn read_elem_section(&mut self) -> Result<WasmElemSection, Error> {
         
         let mut elem_section: WasmElemSection = WasmElemSection {
-            section_size: self.read_dynamic_int(0)?,
-            num_elems: self.read_dynamic_int(0)?,
+            section_size: self.read_dynamic_uint(0)?,
+            num_elems: self.read_dynamic_uint(0)?,
             elems: Vec::new()
         };
 
@@ -705,18 +720,18 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     
     fn read_data_count(&mut self) -> Result<WasmDataCountSection, Error> {
         Ok(WasmDataCountSection {
-            section_size: self.read_dynamic_int(0)?,
-            datacount: self.read_dynamic_int(0)?,
+            section_size: self.read_dynamic_uint(0)?,
+            datacount: self.read_dynamic_uint(0)?,
         })
     }
 
     fn read_locals(&mut self) -> Result<(Vec<WasmLocal>,  Vec<(u8, usize)>), Error> {
-        let num_decs = self.read_dynamic_int(0)?;
+        let num_decs = self.read_dynamic_uint(0)?;
         
         let mut local_types = Vec::<(u8, usize)>::new();
         let mut locals = Vec::<WasmLocal>::new();
         for _ in 0..num_decs {
-            let num_type = self.read_dynamic_int(0)?;
+            let num_type = self.read_dynamic_uint(0)?;
             let _type = self.read_sized::<u8>(0)?;
             let mut locals_of_type = 
                 (0.._type).map(
@@ -730,11 +745,11 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     }
 
     fn read_function(&mut self) -> Result<WasmFunction, Error> {
-        let size = self.read_dynamic_int(0)?;
+        let size = self.read_dynamic_uint(0)?;
         println!("size {}", size);
         let (locals, local_types) = self.read_locals()?;
         let body = self.read_expr()?; 
-        println!("real size {}", body.expr.len());
+        println!("real size {}", calculate_body_len(&body));
         Ok(WasmFunction{
             size,
             _type: None,
@@ -747,14 +762,18 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     fn read_code_section(&mut self) -> Result<WasmCodeSection, Error> {
         
         let mut code_section: WasmCodeSection = WasmCodeSection {
-            section_size: self.read_dynamic_int(0)?,
-            num_functions: self.read_dynamic_int(0)?,
+            section_size: self.read_dynamic_uint(0)?,
+            num_functions: self.read_dynamic_uint(0)?,
             functions: vec![]
         };
 
         println!("num functions: {}", code_section.num_functions);
 
-        for _ in 0..code_section.num_functions {
+        for i in 0..code_section.num_functions {
+            println!{"function num: {}", i}
+            if i == 27 {
+                println!("pls brk");
+            }
             code_section.functions.push(self.read_function()?);
         }
         Ok(code_section)

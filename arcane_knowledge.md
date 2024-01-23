@@ -13,6 +13,9 @@ final value:
 0|0|0|0 0|0|0|1 0|0|0|0 1|0|1|0        ---> 0x10A
                 ^ information bit unset
 ``` 
+Note that this encoding/decoding strategy is only for unsigned integers. Signed integers have the second to last bit set to 1
+
+
 
 Some places where these "unsized values" are used:
 - The size of sections

@@ -25,7 +25,7 @@ pub struct BrTableConst {
 pub enum ExprSeg {
     Instr(InstrInfo),
     // Raw bits of an int, signage and other things are figured out later (all ints are stored in the same manner)
-    Int(u64),
+    Int(i64),
     Float32(f32),
     Float64(f64),
     BrTable(BrTableConst),
@@ -91,15 +91,46 @@ pub fn get_edge_case(info: InstrInfo) -> SpecialInstr {
     match info.instr {
         0x0e => SpecialInstr::BrTable,
         0x02 | 0x03 | 0x04 => SpecialInstr::BeginBlock,
-        0x0b | 0x05 => SpecialInstr::EndBlock,
+        0x0b => SpecialInstr::EndBlock,
         0x11 => SpecialInstr::CallIndirect, 
         _ => SpecialInstr::None
     }
 }
 
+pub fn calc_dyn_size(mut i: i64) -> usize {
+    let mut count = 1;
+    if i == i64::MIN {
+        i = i + 1;
+    }
+    i = i.abs();
+    while i != 0 {
+        i >>= 7;
+        count += 1;
+    }
+    count
+}
+
+pub fn calculate_body_len(expr: &WasmExpr) -> usize {
+    let mut total = 0;
+    for seg in expr.expr.clone() {
+        total += match seg {
+            ExprSeg::Instr(_) => 1,
+            ExprSeg::Int(i) => calc_dyn_size(i),
+            ExprSeg::Float32(_) => 4,
+            ExprSeg::Float64(_) => 8,
+            ExprSeg::BrTable(tab) => calc_dyn_size(tab.default as i64) 
+                + tab.break_depths.iter()
+                    .fold(0, |acc: usize, i| acc + calc_dyn_size(*i as i64)),
+            _ => 0
+        }
+    }
+    total
+}
+
 /**
  * Cases that aren't currently getting scraped:
  * 1. ref.func: doesn't appear directly in any scraped output, but is needed for elements
+ * 2. Any load/store should not take in the type specified by the instr name, instead being void
  */
 pub const INSTRS: [InstrInfo; 256] = [
     InstrInfo{instr: 0x00, name: "unreachable", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
@@ -142,29 +173,29 @@ pub const INSTRS: [InstrInfo; 256] = [
     InstrInfo{instr: 0x25, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
     InstrInfo{instr: 0x26, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
     InstrInfo{instr: 0x27, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
-    InstrInfo{instr: 0x28, name: "i32.load", in_type: Prim::Void, out_type: Prim::I32, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x29, name: "i64.load", in_type: Prim::Void, out_type: Prim::I64, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x2a, name: "f32.load", in_type: Prim::Void, out_type: Prim::F32, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x2b, name: "f64.load", in_type: Prim::Void, out_type: Prim::F64, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x2c, name: "i32.load8_s", in_type: Prim::Void, out_type: Prim::I32, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x2d, name: "i32.load8_u", in_type: Prim::Void, out_type: Prim::I32, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x2e, name: "i32.load16_s", in_type: Prim::Void, out_type: Prim::I32, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x2f, name: "i32.load16_u", in_type: Prim::Void, out_type: Prim::I32, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x30, name: "i64.load8_s", in_type: Prim::Void, out_type: Prim::I64, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x31, name: "i64.load8_u", in_type: Prim::Void, out_type: Prim::I64, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x32, name: "i64.load16_s", in_type: Prim::Void, out_type: Prim::I64, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x33, name: "i64.load16_u", in_type: Prim::Void, out_type: Prim::I64, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x34, name: "i64.load32_s", in_type: Prim::Void, out_type: Prim::I64, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x35, name: "i64.load32_u", in_type: Prim::Void, out_type: Prim::I64, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x36, name: "i32.store", in_type: Prim::Void, out_type: Prim::I32, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x37, name: "i64.store", in_type: Prim::Void, out_type: Prim::I64, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x38, name: "f32.store", in_type: Prim::Void, out_type: Prim::F32, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x39, name: "f64.store", in_type: Prim::Void, out_type: Prim::F64, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x3a, name: "i32.store8", in_type: Prim::Void, out_type: Prim::I32, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x3b, name: "i32.store16", in_type: Prim::Void, out_type: Prim::I32, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x3c, name: "i64.store8", in_type: Prim::Void, out_type: Prim::I64, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x3d, name: "i64.store16", in_type: Prim::Void, out_type: Prim::I64, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x3e, name: "i64.store32", in_type: Prim::Void, out_type: Prim::I64, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x28, name: "i32.load", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x29, name: "i64.load", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x2a, name: "f32.load", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x2b, name: "f64.load", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x2c, name: "i32.load8_s", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x2d, name: "i32.load8_u", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x2e, name: "i32.load16_s", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x2f, name: "i32.load16_u", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x30, name: "i64.load8_s", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x31, name: "i64.load8_u", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x32, name: "i64.load16_s", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x33, name: "i64.load16_u", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x34, name: "i64.load32_s", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x35, name: "i64.load32_u", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x36, name: "i32.store", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x37, name: "i64.store", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x38, name: "f32.store", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x39, name: "f64.store", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x3a, name: "i32.store8", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x3b, name: "i32.store16", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x3c, name: "i64.store8", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x3d, name: "i64.store16", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x3e, name: "i64.store32", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
     InstrInfo{instr: 0x3f, name: "memory.size", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: false},
     InstrInfo{instr: 0x40, name: "void", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
     InstrInfo{instr: 0x41, name: "i32.const", in_type: Prim::Void, out_type: Prim::I32, has_const: true, takes_align: false},

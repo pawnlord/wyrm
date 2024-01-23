@@ -61,7 +61,7 @@ def get_line_values(i, line):
         parts = name.split('.')
 
         types = (get_type(parts[0]), Type.VOID)
-        if len(parts) == 2:
+        if len(parts) == 2 and not ("load" in parts[1] or "store" in parts[1]):
             types = (types[0], get_type(parts[1]))
         
         isInstr = not (" " in name or " " in value)
