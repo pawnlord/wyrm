@@ -1,5 +1,5 @@
 use core::fmt;
-use std::fmt::{Debug, Formatter};
+use std::{borrow::Borrow, fmt::{Debug, Formatter}, io::{Error, ErrorKind}};
 
 
 
@@ -29,11 +29,22 @@ pub enum ExprSeg {
     Float32(f32),
     Float64(f64),
     BrTable(BrTableConst),
+    Block(Box<WasmExpr>)
 }
 
 #[derive(Debug, Clone)]
 pub struct WasmExpr{
     pub expr: Vec<ExprSeg>    
+}
+
+impl WasmExpr {
+    pub fn new_box() -> Box<Self> {
+        Box::new(
+            Self {
+                expr: vec![]
+            }
+        )
+    }
 }
 
 pub fn type_values(t: Prim) -> (i32, String) {
@@ -46,6 +57,259 @@ pub fn type_values(t: Prim) -> (i32, String) {
         Prim::FuncIdx => (5, "funcidx".to_string()),
     }
 } 
+
+
+#[derive(Debug)]
+pub struct WasmHeader {
+    pub magic_number: u32,
+    pub version: u32,
+}
+
+// Section containing function types?
+#[derive(Debug)]
+pub struct WasmTypeSection {
+    pub section_size: usize,
+    pub num_types: usize,
+    pub function_signatures: Vec<WasmFunctionType>,
+}
+
+// Type field for function signatures
+#[derive(Debug, Clone, Copy)]
+pub struct WasmTypeAnnotation {
+    pub _type: u8,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum WasmTypedData {
+    Void,
+    I32(i32),
+    I64(i64),
+    F32(f32),
+    F64(f64),
+}
+
+// Section containing the signature of a function
+#[derive(Debug)]
+pub struct WasmFunctionType {
+    pub func: u8,
+    pub num_params: usize,
+    // of size num_params
+    pub params: Vec<WasmTypeAnnotation>,
+    pub num_results: usize,
+    // of size num_results
+    pub results: Vec<WasmTypeAnnotation>,
+}
+
+// Metadata about import section
+#[derive(Debug)]
+pub struct WasmImportSection {
+    pub section_size: usize,
+    pub num_imports: usize,
+    pub imports: Vec<WasmImportHeader>
+}
+
+// Section describing imports
+#[derive(Debug)]
+pub struct WasmImportHeader {
+    pub mod_name_length: usize,
+    // of size mod_name_length
+    pub import_module_name: Vec<u8>,
+    pub import_field_len: usize,
+    // of size emscripten_memcp_len
+    pub import_field: Vec<u8>,
+    pub import_kind: u8,
+    pub import_signature_index: u8,
+}
+
+#[derive(Debug)]
+pub struct WasmFunctionSection {
+    pub section_size: usize,
+    pub num_functions: usize,
+    pub function_signature_indexes: Vec<u8>
+}
+
+#[derive(Debug)]
+pub struct WasmTableSection {
+    
+    pub section_size: usize,
+    pub num_tables: usize,
+    pub tables: Vec<WasmTable>,
+}
+#[derive(Debug)]
+pub struct WasmTable {
+    pub wasm_type: u8,
+    pub limits_flags: u8,
+    pub limits_initial: usize,
+    pub limits_max: usize,
+}
+
+#[derive(Debug)]
+pub struct WasmMemorySection {
+    pub section_size: usize,
+    pub num_memories: usize,
+    pub memories: Vec<WasmMemoryStruct>,
+}
+
+#[derive(Debug)]
+pub struct WasmMemoryStruct {
+    pub limits_flags: u8,
+    pub limits_initial: usize,
+    pub limits_max: usize,
+}
+
+#[derive(Debug)]
+pub struct WasmGlobalSection {
+    pub section_size: usize,
+    pub num_globals: usize,
+    pub globals: Vec<WasmGlobal>,
+}
+#[derive(Debug, Clone, Copy)]
+pub struct WasmGlobal {
+    pub wasm_type: WasmTypeAnnotation,
+    pub mutability: u8,
+    pub data: WasmTypedData,
+}
+
+#[derive(Debug)]
+pub struct WasmExportSection {
+    pub section_size: usize,
+    pub num_exports: usize,
+    pub exports: Vec<WasmExportHeader>
+}
+
+#[derive(Debug)]
+pub enum WasmRefType {
+    FuncRef,
+    Externref
+}
+
+pub fn byte_to_reftype(byte: u8) -> Result<WasmRefType, Error> {
+    match byte {
+        0x70 => Ok(WasmRefType::FuncRef),
+        0x6F => Ok(WasmRefType::FuncRef),
+        
+        _ => {
+            Err(Error::new(ErrorKind::InvalidData, format!("Invalid RefType byte: {:?}", byte)))
+        }
+    }
+}
+
+
+// Section describing imports
+#[derive(Debug)]
+pub struct WasmExportHeader {
+    // of size emscripten_memcp_len
+    pub export_name_len: usize,
+    pub export_name: Vec<u8>,
+    pub export_kind: u8,
+    pub export_signature_index: u8,
+}
+
+#[derive(Debug)]
+pub struct WasmElemSection {
+    pub section_size: usize,
+    pub num_elems: usize,
+    pub elems: Vec<WasmElem>
+}
+
+#[derive(Debug)]
+pub struct WasmCodeSection {
+    pub section_size: usize,
+    pub num_functions: usize,
+    pub functions: Vec<WasmFunction>
+}
+
+
+#[derive(Debug)]
+pub struct WasmDataSection {
+    pub section_size: usize,
+    pub num_data_segs: usize,
+    pub data_segs: Vec<WasmDataSeg>
+}
+
+#[derive(Debug)]
+pub struct WasmDataSegHeader {
+    pub header_flags: u8,
+    pub expr: WasmExpr,
+    pub data_size: usize,
+}
+
+#[derive(Debug)]
+pub struct WasmDataSeg {
+    pub header: WasmDataSegHeader,
+    pub data: Vec<u8>
+}
+
+
+#[derive(Debug)]
+pub struct WasmDataCountSection {
+    pub section_size: usize,
+    pub datacount: usize
+}
+
+#[derive(Debug)]
+pub struct AcvtiveStruct {
+    pub table: u32, 
+    pub offset_expr: WasmExpr
+}
+
+#[derive(Debug)]
+pub enum WasmElemMode {
+    Passive,
+    Active(AcvtiveStruct),
+    Declarative
+}
+
+#[derive(Debug)]
+pub struct WasmElem {
+    pub _type: WasmRefType,
+    pub init: WasmExpr,
+    pub mode: WasmElemMode
+}
+#[derive(Debug, Clone, Copy)]
+pub struct WasmLocal{
+    pub _type: u8
+}
+
+pub struct WasmFunction {
+    pub size: usize,
+    pub _type: Option<WasmFunctionType>,
+    pub local_types: Vec<(u8, usize)>,
+    pub locals: Vec<WasmLocal>,
+    pub body: WasmExpr,
+}
+
+impl Debug for WasmFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WasmFunction")
+        .field("size", &self.size)
+        .field("_type", &self._type)
+        .field("locals", &self.local_types.iter()
+            .map(|local_type| {
+                format!("[{:}; {:}]", local_type.0, local_type.1)}
+            ).collect::<Vec<String>>()
+            .join(", "))
+        .field("body", &self.body)
+        .finish()
+    }
+}
+
+
+#[derive(Debug)]
+pub struct WasmFile {
+    pub wasm_header: WasmHeader,
+    pub type_section: WasmTypeSection,
+    pub import_section_header: WasmImportSection,
+    pub function_section: WasmFunctionSection,
+    pub table_section: WasmTableSection,
+    pub memory_section: WasmMemorySection,
+    pub global_section: WasmGlobalSection,
+    pub export_section: WasmExportSection,
+    pub elem_section: WasmElemSection,
+    pub code_section: WasmCodeSection,
+    pub data_section: WasmDataSection,
+    pub data_count_section: WasmDataCountSection,
+}
 
 // TODO: Model how the instruction affects the stack
 #[derive(Clone, Copy)]
@@ -121,6 +385,7 @@ pub fn calculate_body_len(expr: &WasmExpr) -> usize {
             ExprSeg::BrTable(tab) => calc_dyn_size(tab.default as i64) 
                 + tab.break_depths.iter()
                     .fold(0, |acc: usize, i| acc + calc_dyn_size(*i as i64)),
+            ExprSeg::Block(block) => calculate_body_len(block.as_ref()),
             _ => 0
         }
     }
@@ -454,3 +719,9 @@ pub fn get_instr(name: &str) -> Option<InstrInfo> {
 //         }
 //     }).collect()
 // }
+
+impl WasmFile {
+    pub fn get_import_sig(&self, import: &WasmImportHeader) -> &WasmFunctionType {
+        &self.type_section.function_signatures[import.import_signature_index as usize]
+    }
+}

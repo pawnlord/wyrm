@@ -7,244 +7,7 @@ use std::{
     mem, ptr, arch::x86_64::_t1mskc_u32, f32::consts::E,
 };
 
-use crate::wasm_model::{self, WasmExpr, ExprSeg, INSTRS, Prim, get_instr, get_edge_case, SpecialInstr, BrTableConst, calculate_body_len};
-
-#[derive(Debug)]
-pub struct WasmHeader {
-    magic_number: u32,
-    version: u32,
-}
-
-// Section containing function types?
-#[derive(Debug)]
-pub struct WasmTypeSection {
-    section_size: usize,
-    num_types: usize,
-    function_signatures: Vec<WasmFunctionType>,
-}
-
-// Type field for function signatures
-#[derive(Debug, Clone, Copy)]
-pub struct WasmTypeAnnotation {
-    _type: u8,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum WasmTypedData {
-    Void,
-    I32(i32),
-    I64(i64),
-    F32(f32),
-    F64(f64),
-}
-
-// Section containing the signature of a function
-#[derive(Debug)]
-pub struct WasmFunctionType {
-    func: u8,
-    num_params: usize,
-    // of size num_params
-    params: Vec<WasmTypeAnnotation>,
-    num_results: usize,
-    // of size num_results
-    results: Vec<WasmTypeAnnotation>,
-}
-
-// Metadata about import section
-#[derive(Debug)]
-pub struct WasmImportSection {
-    
-    section_size: usize,
-    num_imports: usize,
-    imports: Vec<WasmImportHeader>
-}
-
-// Section describing imports
-#[derive(Debug)]
-pub struct WasmImportHeader {
-    mod_name_length: usize,
-    // of size mod_name_length
-    import_module_name: Vec<u8>,
-    import_field_len: usize,
-    // of size emscripten_memcp_len
-    import_field: Vec<u8>,
-    import_kind: u8,
-    import_signature_index: u8,
-}
-
-#[derive(Debug)]
-pub struct WasmFunctionSection {
-    
-    section_size: usize,
-    num_functions: usize,
-    function_signature_indexes: Vec<u8>
-}
-
-#[derive(Debug)]
-pub struct WasmTableSection {
-    
-    section_size: usize,
-    num_tables: usize,
-    tables: Vec<WasmTable>,
-}
-#[derive(Debug)]
-pub struct WasmTable {
-    funcref: u8,
-    limits_flags: u8,
-    limits_initial: usize,
-    limits_max: usize,
-}
-
-#[derive(Debug)]
-pub struct WasmMemorySection {
-    section_size: usize,
-    num_memories: usize,
-    memories: Vec<WasmMemoryStruct>,
-}
-
-#[derive(Debug)]
-pub struct WasmMemoryStruct {
-    limits_flags: u8,
-    limits_initial: usize,
-    limits_max: usize,
-}
-
-#[derive(Debug)]
-pub struct WasmGlobalSection {
-    section_size: usize,
-    num_globals: usize,
-    globals: Vec<WasmGlobal>,
-}
-#[derive(Debug, Clone, Copy)]
-pub struct WasmGlobal {
-    wasm_type: WasmTypeAnnotation,
-    mutability: u8,
-    data: WasmTypedData,
-}
-
-#[derive(Debug)]
-pub struct WasmExportSection {
-    section_size: usize,
-    num_exports: usize,
-    exports: Vec<WasmExportHeader>
-}
-
-#[derive(Debug)]
-pub enum WasmRefType {
-    FuncRef,
-    Externref
-}
-
-pub fn byte_to_reftype(byte: u8) -> Result<WasmRefType, Error> {
-    match byte {
-        0x70 => Ok(WasmRefType::FuncRef),
-        0x6F => Ok(WasmRefType::FuncRef),
-        
-        _ => {
-            Err(Error::new(ErrorKind::InvalidData, format!("Invalid RefType byte: {:?}", byte)))
-        }
-    }
-}
-
-
-// Section describing imports
-#[derive(Debug)]
-pub struct WasmExportHeader {
-    // of size emscripten_memcp_len
-    export_name_len: usize,
-    export_name: Vec<u8>,
-    export_kind: u8,
-    export_signature_index: u8,
-}
-
-#[derive(Debug)]
-pub struct WasmElemSection {
-    section_size: usize,
-    num_elems: usize,
-    elems: Vec<WasmElem>
-}
-
-#[derive(Debug)]
-pub struct WasmCodeSection {
-    section_size: usize,
-    num_functions: usize,
-    functions: Vec<WasmFunction>
-}
-
-
-#[derive(Debug)]
-pub struct WasmDataSection {
-    section_size: usize,
-    num_data_segs: usize,
-    data_segs: Vec<WasmDataSeg>
-}
-
-#[derive(Debug)]
-pub struct WasmDataSegHeader {
-    header_flags: u8,
-    expr: WasmExpr,
-    data_size: usize,
-}
-
-#[derive(Debug)]
-pub struct WasmDataSeg {
-    header: WasmDataSegHeader,
-    data: Vec<u8>
-}
-
-
-#[derive(Debug)]
-pub struct WasmDataCountSection {
-    section_size: usize,
-    datacount: usize
-}
-
-#[derive(Debug)]
-pub struct AcvtiveStruct {
-    pub table: u32, 
-    pub offset_expr: WasmExpr
-}
-
-#[derive(Debug)]
-pub enum WasmElemMode {
-    Passive,
-    Active(AcvtiveStruct),
-    Declarative
-}
-
-#[derive(Debug)]
-pub struct WasmElem {
-    _type: WasmRefType,
-    init: WasmExpr,
-    mode: WasmElemMode
-}
-#[derive(Debug, Clone, Copy)]
-pub struct WasmLocal{
-    _type: u8
-}
-
-pub struct WasmFunction {
-    size: usize,
-    _type: Option<WasmFunctionType>,
-    local_types: Vec<(u8, usize)>,
-    locals: Vec<WasmLocal>,
-    body: WasmExpr,
-}
-
-impl Debug for WasmFunction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WasmFunction")
-        .field("size", &self.size)
-        .field("_type", &self._type)
-        .field("locals", &self.local_types.iter()
-            .map(|local_type| {
-                format!("[{:}; {:}]", local_type.0, local_type.1)}
-            ).collect::<Vec<String>>()
-            .join(", "))
-        .field("body", &self.body)
-        .finish()
-    }
-}
+use crate::wasm_model::*;
 
 
 fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<WasmGlobal, Error> {
@@ -269,7 +32,7 @@ fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<W
             assert_eq!(
                 state.read_sized(0)?,
                 0x44 as u8,
-                "Global is not a i32 const value"
+                "Global is not a f64 const value"
             );
             global.data = WasmTypedData::F64(state.read_sized(0.0)?);
         }
@@ -278,7 +41,7 @@ fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<W
             assert_eq!(
                 state.read_sized(0)?,
                 0x43 as u8,
-                "Global is not a i32 const value"
+                "Global is not a f32 const value"
             );
             global.data = WasmTypedData::F32(state.read_sized(0.0)?);
         }
@@ -287,7 +50,7 @@ fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<W
             assert_eq!(
                 state.read_sized(0)?,
                 0x42 as u8,
-                "Global is not a i32 const value"
+                "Global is not a i64 const value"
             );
             global.data = WasmTypedData::I64(state.read_dynamic_uint(0)? as i64);
         }
@@ -311,22 +74,6 @@ fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<W
     assert_eq!(end, 0x0b);
 
     Ok(global)
-}
-
-#[derive(Debug)]
-pub struct WasmFile {
-    wasm_header: WasmHeader,
-    type_section: WasmTypeSection,
-    import_section_header: WasmImportSection,
-    function_section: WasmFunctionSection,
-    table_section: WasmTableSection,
-    memory_section: WasmMemorySection,
-    global_section: WasmGlobalSection,
-    export_section: WasmExportSection,
-    elem_section: WasmElemSection,
-    code_section: WasmCodeSection,
-    data_section: WasmDataSection,
-    data_count_section: WasmDataCountSection,
 }
 
 #[derive(Debug)]
@@ -418,13 +165,14 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     }
 
     fn read_expr(&mut self) -> Result<WasmExpr, Error>  {
-        let mut expr = Vec::<ExprSeg>::new();
+        let mut exprs: Vec<Box<WasmExpr>> = vec![];
+        let mut last_expr = WasmExpr::new_box();
+        let mut expr_box = WasmExpr::new_box();
         let mut level: i32 = 0;
         while let Ok(byte) = self.read_sized::<u8>(0) {
-            // print!("byte: {byte:?}\n");
-            let info = wasm_model::INSTRS[byte as usize];
+            let info = INSTRS[byte as usize];
+            let expr = &mut expr_box.expr;
             expr.push(ExprSeg::Instr(info));
-            // print!("instr: {:?} {:?}\n", info, level);
             let special_case = get_edge_case(info);
             if special_case == SpecialInstr::BrTable {
                 let num = self.read_dynamic_uint(0)?;
@@ -450,7 +198,6 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             }
             
             if info.takes_align {
-                // println!("taking byte for {} ({:#x})", info.name, info.instr);
                 self.read_sized::<u8>(0)?;
             }
             
@@ -465,22 +212,27 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                     // Number
                     _ => {
                         let num = self.read_dynamic_int(0)?;
-                        // println!("num: {}", num);
                         expr.push(ExprSeg::Int(num ));
                     }
                 }
             }
             if special_case == SpecialInstr::BeginBlock {
                 level += 1;
+                exprs.push(last_expr);
+                last_expr = expr_box;
+                expr_box = WasmExpr::new_box();
             }
             if special_case == SpecialInstr::EndBlock {
                 level -= 1;
                 if level < 0 {
                     break;
                 }
+                last_expr.expr.push(ExprSeg::Block(expr_box));
+                expr_box = last_expr;
+                last_expr = exprs.pop().unwrap();
             }
         }
-        Ok(WasmExpr {expr})
+        Ok(*expr_box)
 
     }
 
@@ -513,6 +265,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         }
         Ok(type_section)
     }
+
     fn read_import_section(&mut self) -> Result<WasmImportSection, Error> {
         // A section containing a description of things imported from other sources.
         // Each import header has a name and a signature index
@@ -564,12 +317,12 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
 
         for _ in 0..table_section.num_tables {
             let mut table: WasmTable = WasmTable {
-                funcref: 0,
+                wasm_type: 0,
                 limits_flags: 0,
                 limits_initial: 0,
                 limits_max: 0,
             };
-            table.funcref = self.read_sized::<u8>(0)?;
+            table.wasm_type = self.read_sized::<u8>(0)?;
             table.limits_flags = self.read_sized::<u8>(0)?;
             table.limits_initial = self.read_dynamic_uint(0)?;
             table.limits_max = self.read_dynamic_uint(0)?;
@@ -609,7 +362,6 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
 
         for _ in 0..global_section.num_globals {
             let global = read_global(self)?;
-            println!("{:?}", global);
             global_section.globals.push(global);
         }
         Ok(global_section)
@@ -768,10 +520,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
 
     fn read_function(&mut self) -> Result<WasmFunction, Error> {
         let size = self.read_dynamic_uint(0)?;
-        println!("size {}", size);
         let (locals, local_types) = self.read_locals()?;
         let body = self.read_expr()?; 
-        println!("real size {}", calculate_body_len(&body));
         Ok(WasmFunction{
             size,
             _type: None,
@@ -894,7 +644,6 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
     };
 
     while let Ok(section_type) = state.read_sized::<u8>(0) {
-        println!("{:x}", section_type);
         match section_type {
             0x01 => type_section = state.read_type_section()?,
             0x02 => import_section_header = state.read_import_section()?,
