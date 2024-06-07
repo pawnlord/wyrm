@@ -12,7 +12,9 @@ pub enum Prim{
     I64,
     F32,
     F64,
-    FuncIdx
+    Local,
+    Global,
+    Func
 }
 
 #[derive(Debug, Clone)]
@@ -28,6 +30,9 @@ pub enum ExprSeg {
     Int(i64),
     Float32(f32),
     Float64(f64),
+    Local(i64),
+    Global(i64),
+    Func(i64),
     BrTable(BrTableConst),
     Block(Box<WasmExpr>)
 }
@@ -84,6 +89,9 @@ impl WasmExpr {
                 ExprSeg::Float64(f) => {
                     wat += format!("{:}", f).as_str();
                 },
+                ExprSeg::Global(idx) => {},
+                ExprSeg::Local(idx) => {},
+                ExprSeg::Func(idx) => {},
                 ExprSeg::BrTable(table_const) => {},
                 ExprSeg::Block(expr) => {
                     // Add extra characters for indentation
@@ -132,7 +140,9 @@ pub fn type_values(t: Prim) -> (i32, String) {
         Prim::I64 => (2, "i64".to_string()),
         Prim::F32 => (3, "f32".to_string()),
         Prim::F64 => (4, "f64".to_string()),
-        Prim::FuncIdx => (5, "funcidx".to_string()),
+        Prim::Local => (5, "local".to_string()),
+        Prim::Global => (6, "global".to_string()),
+        Prim::Func => (7, "funcidx".to_string()),
     }
 } 
 
@@ -186,6 +196,24 @@ pub struct WasmImportSection {
     pub imports: Vec<WasmImportHeader>
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum WasmImportType {
+    Func,
+    Table,
+    Mem,
+    Global
+}
+
+pub fn num_to_import_type(num: u8) -> WasmImportType {
+    match num {
+        0x00 => WasmImportType::Func,
+        0x01 => WasmImportType::Table,
+        0x02 => WasmImportType::Mem,
+        0x03 => WasmImportType::Global,
+        _ => WasmImportType::Global
+    }
+}
+
 // Section describing imports
 #[derive(Debug)]
 pub struct WasmImportHeader {
@@ -195,8 +223,8 @@ pub struct WasmImportHeader {
     pub import_field_len: usize,
     // of size emscripten_memcp_len
     pub import_field: Vec<u8>,
-    pub import_kind: u8,
-    pub import_signature_index: u8,
+    pub import_kind: WasmImportType,
+    pub import_type: u8,
 }
 
 #[derive(Debug)]
@@ -477,6 +505,7 @@ pub fn calculate_body_len(expr: &WasmExpr) -> usize {
  * 1. ref.func: doesn't appear directly in any scraped output, but is needed for elements
  * 2. Any load/store should not take in the type specified by the instr name, instead being void
  */
+
 pub const INSTRS: [InstrInfo; 256] = [
     InstrInfo{instr: 0x00, name: "unreachable", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
     InstrInfo{instr: 0x01, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
@@ -510,11 +539,11 @@ pub const INSTRS: [InstrInfo; 256] = [
     InstrInfo{instr: 0x1d, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
     InstrInfo{instr: 0x1e, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
     InstrInfo{instr: 0x1f, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
-    InstrInfo{instr: 0x20, name: "local.get", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: false},
-    InstrInfo{instr: 0x21, name: "local.set", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: false},
-    InstrInfo{instr: 0x22, name: "local.tee", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: false},
-    InstrInfo{instr: 0x23, name: "global.get", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: false},
-    InstrInfo{instr: 0x24, name: "global.set", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: false},
+    InstrInfo{instr: 0x20, name: "local.get", in_type: Prim::Void, out_type: Prim::Global, has_const: true, takes_align: false},
+    InstrInfo{instr: 0x21, name: "local.set", in_type: Prim::Void, out_type: Prim::Global, has_const: true, takes_align: false},
+    InstrInfo{instr: 0x22, name: "local.tee", in_type: Prim::Void, out_type: Prim::Global, has_const: true, takes_align: false},
+    InstrInfo{instr: 0x23, name: "global.get", in_type: Prim::Void, out_type: Prim::Local, has_const: true, takes_align: false},
+    InstrInfo{instr: 0x24, name: "global.set", in_type: Prim::Void, out_type: Prim::Local, has_const: true, takes_align: false},
     InstrInfo{instr: 0x25, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
     InstrInfo{instr: 0x26, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
     InstrInfo{instr: 0x27, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
@@ -526,7 +555,7 @@ pub const INSTRS: [InstrInfo; 256] = [
     InstrInfo{instr: 0x2d, name: "i32.load8_u", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
     InstrInfo{instr: 0x2e, name: "i32.load16_s", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
     InstrInfo{instr: 0x2f, name: "i32.load16_u", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
-    InstrInfo{instr: 0x30, name: "i64.load8_s", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
+    InstrInfo{instr: 0x30, name: "i64.load8_s", in_type: Prim::Void, out_type:  Prim::Void, has_const: true, takes_align: true},
     InstrInfo{instr: 0x31, name: "i64.load8_u", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
     InstrInfo{instr: 0x32, name: "i64.load16_s", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
     InstrInfo{instr: 0x33, name: "i64.load16_u", in_type: Prim::Void, out_type: Prim::Void, has_const: true, takes_align: true},
@@ -688,7 +717,7 @@ pub const INSTRS: [InstrInfo; 256] = [
     InstrInfo{instr: 0xcf, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
     InstrInfo{instr: 0xd0, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
     InstrInfo{instr: 0xd1, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
-    InstrInfo{instr: 0xd2, name: "ref.func", in_type: Prim::FuncIdx, out_type: Prim::Void, has_const: true, takes_align: false},
+    InstrInfo{instr: 0xd2, name: "ref.func", in_type: Prim::Func, out_type: Prim::Void, has_const: true, takes_align: false},
     InstrInfo{instr: 0xd3, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
     InstrInfo{instr: 0xd4, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
     InstrInfo{instr: 0xd5, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
@@ -735,7 +764,6 @@ pub const INSTRS: [InstrInfo; 256] = [
     InstrInfo{instr: 0xfe, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
     InstrInfo{instr: 0xff, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},
 ];
-
 
 pub fn get_instr(name: &str) -> Option<InstrInfo> {
     INSTRS.iter().find(|x| {x.name == name}).map(|x| {*x})
@@ -802,6 +830,6 @@ pub fn get_instr(name: &str) -> Option<InstrInfo> {
 
 impl WasmFile {
     pub fn get_import_sig(&self, import: &WasmImportHeader) -> &WasmFunctionType {
-        &self.type_section.function_signatures[import.import_signature_index as usize]
+        &self.type_section.function_signatures[import.import_type as usize]
     }
 }

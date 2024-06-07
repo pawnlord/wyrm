@@ -13,9 +13,9 @@ class Type(Enum):
     I64 = (2, "i64", "I64")
     F32 = (3, "f32", "F32")
     F64 = (4, "f64", "F64")
-    LOCAL = (4, "local", "GLOBAL")
-    GLOBAL = (4, "global", "LOCAL")
-    FUNC = (4, "func", "FUNC")
+    LOCAL = (4, "local", "Global")
+    GLOBAL = (4, "global", "Local")
+    FUNC = (4, "func", "Func")
 
 def get_type(s):
     for t in Type:

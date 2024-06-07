@@ -210,10 +210,22 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                     Prim::F64 => {
                         expr.push(ExprSeg::Float64(self.read_sized(0.0)?));
                     }
+                    Prim::Global => {
+                        let num = self.read_dynamic_int(0)?;
+                        expr.push(ExprSeg::Local(num));
+                    }
+                    Prim::Local => {
+                        let num = self.read_dynamic_int(0)?;
+                        expr.push(ExprSeg::Global(num));
+                    }
+                    Prim::Func => {
+                        let num = self.read_dynamic_int(0)?;
+                        expr.push(ExprSeg::Func(num));
+                    }
                     // Number
                     _ => {
                         let num = self.read_dynamic_int(0)?;
-                        expr.push(ExprSeg::Int(num ));
+                        expr.push(ExprSeg::Int(num));
                     }
                 }
             }
@@ -288,15 +300,15 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                 import_module_name: Vec::new(),
                 import_field_len: 0,
                 import_field: Vec::new(),
-                import_kind: 0,
-                import_signature_index: 0,
+                import_kind: WasmImportType::Global,
+                import_type: 0,
             };
             import.mod_name_length = self.read_dynamic_uint(0)?;
             import.import_module_name = self.read_vector(0, import.mod_name_length)?;
             import.import_field_len = self.read_dynamic_uint(0)?;
             import.import_field = self.read_vector(0, import.import_field_len)?;
-            import.import_kind = self.read_sized(0)?;
-            import.import_signature_index = self.read_sized(0)?;
+            import.import_kind = num_to_import_type(self.read_sized(0)?);
+            import.import_type = self.read_sized(0)?;
             import_section_header.imports.push(import);
         }
         Ok(import_section_header)

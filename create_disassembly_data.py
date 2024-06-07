@@ -68,9 +68,6 @@ def get_line_values(i, line):
         isInstr &= name != "alignment"
         isInstr &= not name in ["i32", "i64", "f32", "f64"]
 
-        if name == "if":
-            print(line)
-            
         values = (True,
                 {
                     "value": value,
@@ -85,6 +82,8 @@ def get_line_values(i, line):
     
 
 for i, line in enumerate(lines):
+    if i % 100 == 0:
+        print(i)
     success, information = get_line_values(i, line)
 
     if not success:

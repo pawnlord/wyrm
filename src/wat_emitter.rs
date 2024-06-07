@@ -53,7 +53,15 @@ pub fn sig_to_wat(f: &WasmFunctionType) -> String {
 pub fn emit_wat(wasm: WasmFile) -> String {
     let mut wat: String = "(module\n".to_string();
     for (i, import) in wasm.import_section_header.imports.iter().enumerate() {
-        wat += &indent(format!("(func $import{} (import \"{}\" \"{}\") {})\n",
+        let type_str = match import.import_kind {
+            WasmImportType::Func => "func",
+            WasmImportType::Table => "table",
+            WasmImportType::Mem => "mem",
+            WasmImportType::Global => "global",
+            _ => ""
+        };
+        wat += &indent(format!("({} ${}{} (import \"{}\" \"{}\") {})\n",
+            type_str, type_str,
             i,
             vec_to_string(import.import_module_name.clone()),
             vec_to_string(import.import_field.clone()),
@@ -65,9 +73,6 @@ pub fn emit_wat(wasm: WasmFile) -> String {
         wat += &indent(format!("(table {} {} {})\n", table.limits_initial, table.limits_max, type_to_str(WasmTypeAnnotation { _type: table.wasm_type})), 1);
     }
 
-    // TODO: Import
-
-    
     for (i, export) in wasm.export_section.exports.iter().enumerate() {
         // TODO: Need to find list of these export kinds
         if export.export_kind == 0 {
@@ -96,6 +101,10 @@ pub fn emit_wat(wasm: WasmFile) -> String {
                 wat += &indent(format!("(elem $elem{:} {:} {:})", i, reftype, elem.init), 1);
             }
         }
+    }
+
+    for (i, func) in wasm.code_section.functions.iter().enumerate() {
+        wat += &indent(format!("(func $func{:} {:})", i, func.body), 1);
     }
 
     wat
