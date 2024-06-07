@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{borrow::Borrow, fmt::{Debug, Formatter}, io::{Error, ErrorKind}};
+use std::{borrow::Borrow, fmt::{Debug, Display, Formatter}, io::{Error, ErrorKind}, ops::Deref};
 
 
 
@@ -44,6 +44,84 @@ impl WasmExpr {
                 expr: vec![]
             }
         )
+    }
+    pub fn emit_block_wat(&self, start_segment: usize) -> (usize, String) {
+        let mut wat = "".to_string();
+        let mut emit_until = 0;
+
+        for (i, seg) in self.expr.iter().skip(start_segment).enumerate() {
+            match seg {
+                ExprSeg::Instr(info) => {
+
+                    let special_case = get_edge_case(*info);
+                    if special_case == SpecialInstr::EndBlock {
+                        return (i + start_segment, wat);
+                    }
+                    if i != 0 {
+                        wat += "\n";
+                    }
+
+                    wat += format!("{:}", info.name).as_str();
+
+                    emit_until = 0;
+
+                    // Figure out how many expressions come after this one
+                    if special_case == SpecialInstr::CallIndirect {
+                        emit_until += 2;
+                    } else if special_case == SpecialInstr::BeginBlock {
+                        emit_until += 1;
+                    } else if info.has_const {
+                        emit_until += 1;
+                    }
+
+                },
+                ExprSeg::Int(i) => {
+                    wat += format!("{:}", i).as_str();
+                },
+                ExprSeg::Float32(f) => {
+                    wat += format!("{:}", f).as_str();
+                },
+                ExprSeg::Float64(f) => {
+                    wat += format!("{:}", f).as_str();
+                },
+                ExprSeg::BrTable(table_const) => {},
+                ExprSeg::Block(expr) => {
+                    // Add extra characters for indentation
+                    wat += "  ";
+                    let (_, new_emit) = expr.emit_block_wat(0);
+                    wat += new_emit.replace("\n", "\n  ").as_str();
+                },
+            }
+
+            if emit_until > 0 {
+                wat += " ";
+                emit_until -= 1;
+            }
+        }
+        (self.expr.len() - 1, wat)
+    }
+    pub fn emit_expression_wat(&self) -> String {
+        let mut wat = "".to_string();
+        let mut i = 0;
+        while i < self.expr.len() - 1 {
+            wat += "(";
+            let new_emit: String;
+            (i, new_emit) = self.emit_block_wat(i);
+            i += 1;
+            println!("i: {:} new_emit: {:}", i, new_emit);
+            wat += new_emit.as_str();
+            wat += ") ";
+        }
+        // Remove extraneous space
+        wat.pop();
+
+        wat
+    }
+}
+
+impl Display for WasmExpr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        f.write_str(&self.emit_expression_wat().as_str())
     }
 }
 
@@ -180,13 +258,13 @@ pub struct WasmExportSection {
 #[derive(Debug)]
 pub enum WasmRefType {
     FuncRef,
-    Externref
+    ExternRef
 }
 
 pub fn byte_to_reftype(byte: u8) -> Result<WasmRefType, Error> {
     match byte {
         0x70 => Ok(WasmRefType::FuncRef),
-        0x6F => Ok(WasmRefType::FuncRef),
+        0x6F => Ok(WasmRefType::ExternRef),
         
         _ => {
             Err(Error::new(ErrorKind::InvalidData, format!("Invalid RefType byte: {:?}", byte)))
@@ -203,6 +281,27 @@ pub struct WasmExportHeader {
     pub export_name: Vec<u8>,
     pub export_kind: u8,
     pub export_signature_index: u8,
+}
+
+
+#[derive(Debug)]
+pub struct AcvtiveStruct {
+    pub table: u32, 
+    pub offset_expr: WasmExpr
+}
+
+#[derive(Debug)]
+pub enum WasmElemMode {
+    Passive,
+    Active(AcvtiveStruct),
+    Declarative
+}
+
+#[derive(Debug)]
+pub struct WasmElem {
+    pub _type: WasmRefType,
+    pub init: WasmExpr,
+    pub mode: WasmElemMode
 }
 
 #[derive(Debug)]
@@ -247,25 +346,6 @@ pub struct WasmDataCountSection {
     pub datacount: usize
 }
 
-#[derive(Debug)]
-pub struct AcvtiveStruct {
-    pub table: u32, 
-    pub offset_expr: WasmExpr
-}
-
-#[derive(Debug)]
-pub enum WasmElemMode {
-    Passive,
-    Active(AcvtiveStruct),
-    Declarative
-}
-
-#[derive(Debug)]
-pub struct WasmElem {
-    pub _type: WasmRefType,
-    pub init: WasmExpr,
-    pub mode: WasmElemMode
-}
 #[derive(Debug, Clone, Copy)]
 pub struct WasmLocal{
     pub _type: u8

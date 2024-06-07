@@ -78,6 +78,26 @@ pub fn emit_wat(wasm: WasmFile) -> String {
         }
     }
 
+    for (i, elem) in wasm.elem_section.elems.iter().enumerate() {
+        let reftype = match elem._type {
+            WasmRefType::FuncRef => "funcref",
+            WasmRefType::ExternRef => "externref",
+        };
+
+        match &elem.mode {
+            WasmElemMode::Passive => {
+                wat += &indent(format!("(elem $elem{:} {:} {:})", i, reftype, elem.init), 1);
+            },
+            WasmElemMode::Active(active_struct) => {
+                wat += &indent(format!("(elem $elem{:} {:} {:} {:})", i, active_struct.offset_expr, reftype, elem.init), 1);
+
+            },
+            WasmElemMode::Declarative => {
+                wat += &indent(format!("(elem $elem{:} {:} {:})", i, reftype, elem.init), 1);
+            }
+        }
+    }
+
     wat
 }
 

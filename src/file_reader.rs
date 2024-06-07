@@ -165,8 +165,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     }
 
     fn read_expr(&mut self) -> Result<WasmExpr, Error>  {
-        let mut exprs: Vec<Box<WasmExpr>> = vec![];
-        let mut last_expr = WasmExpr::new_box();
+        let mut scope: Vec<Box<WasmExpr>> = vec![];
+        let mut last_scope = WasmExpr::new_box();
         let mut expr_box = WasmExpr::new_box();
         let mut level: i32 = 0;
         while let Ok(byte) = self.read_sized::<u8>(0) {
@@ -174,6 +174,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             let expr = &mut expr_box.expr;
             expr.push(ExprSeg::Instr(info));
             let special_case = get_edge_case(info);
+            
             if special_case == SpecialInstr::BrTable {
                 let num = self.read_dynamic_uint(0)?;
                 let break_depths = self.read_vector_dynamic(num)?;
@@ -216,20 +217,26 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                     }
                 }
             }
+
             if special_case == SpecialInstr::BeginBlock {
                 level += 1;
-                exprs.push(last_expr);
-                last_expr = expr_box;
+                // Push the scope
+                scope.push(last_scope);
+                last_scope = expr_box;
+
+                // Create a new scope
                 expr_box = WasmExpr::new_box();
             }
+
             if special_case == SpecialInstr::EndBlock {
                 level -= 1;
                 if level < 0 {
                     break;
                 }
-                last_expr.expr.push(ExprSeg::Block(expr_box));
-                expr_box = last_expr;
-                last_expr = exprs.pop().unwrap();
+                // pop the scope
+                last_scope.expr.push(ExprSeg::Block(expr_box));
+                expr_box = last_scope;
+                last_scope = scope.pop().unwrap();
             }
         }
         Ok(*expr_box)
