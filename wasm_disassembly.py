@@ -33,11 +33,11 @@ print('pub const INSTRS: [InstrInfo; 256] = [')
 for i in range(0, 256):
     if i in ops_int.keys():
         item = ops_int[i]
-        print('    InstrInfo{instr: 0x%02x, name: "%s", in_type: Type::%s, out_type: Type::%s, has_const: %s, takes_align: %s},' % (
+        print('    InstrInfo{instr: 0x%02x, name: "%s", in_type: Prim::%s, out_type: Prim::%s, has_const: %s, takes_align: %s},' % (
             i, item.name, 
             item.type[1].value[2], item.type[0].value[2], 
             rust_bool(item.has_arg), rust_bool(item.takes_alignment)
         ))
     else:
-        print('    InstrInfo{instr: 0x%02x, name: "", in_type: Type::Void, out_type: Type::Void, has_const: false, takes_align: false},' % i)
+        print('    InstrInfo{instr: 0x%02x, name: "", in_type: Prim::Void, out_type: Prim::Void, has_const: false, takes_align: false},' % i)
 print('];')

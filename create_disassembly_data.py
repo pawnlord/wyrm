@@ -39,7 +39,7 @@ get_lines_file("earthplugin_web.wat")
 get_lines_file("snake.wat")
 
 
-lines.append("0001973: d2                                        ; func.ref")
+lines.append("0001973: d2                                        ; ref.func")
 lines.append("0001973: 00                                        ; function index")
 
 text = "Scraped content from WASM"

@@ -211,15 +211,15 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                         expr.push(ExprSeg::Float64(self.read_sized(0.0)?));
                     }
                     Prim::Global => {
-                        let num = self.read_dynamic_int(0)?;
+                        let num = self.read_dynamic_uint(0)?;
                         expr.push(ExprSeg::Local(num));
                     }
                     Prim::Local => {
-                        let num = self.read_dynamic_int(0)?;
+                        let num = self.read_dynamic_uint(0)?;
                         expr.push(ExprSeg::Global(num));
                     }
                     Prim::Func => {
-                        let num = self.read_dynamic_int(0)?;
+                        let num = self.read_dynamic_uint(0)?;
                         expr.push(ExprSeg::Func(num));
                     }
                     // Number

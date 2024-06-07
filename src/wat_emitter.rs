@@ -91,14 +91,14 @@ pub fn emit_wat(wasm: WasmFile) -> String {
 
         match &elem.mode {
             WasmElemMode::Passive => {
-                wat += &indent(format!("(elem $elem{:} {:} {:})", i, reftype, elem.init), 1);
+                wat += &indent(format!("(elem $elem{:} {:} {:})\n", i, reftype, elem.init), 1);
             },
             WasmElemMode::Active(active_struct) => {
-                wat += &indent(format!("(elem $elem{:} {:} {:} {:})", i, active_struct.offset_expr, reftype, elem.init), 1);
+                wat += &indent(format!("(elem $elem{:} {:} {:} {:})\n", i, active_struct.offset_expr, reftype, elem.init), 1);
 
             },
             WasmElemMode::Declarative => {
-                wat += &indent(format!("(elem $elem{:} {:} {:})", i, reftype, elem.init), 1);
+                wat += &indent(format!("(elem $elem{:} {:} {:})\n", i, reftype, elem.init), 1);
             }
         }
     }

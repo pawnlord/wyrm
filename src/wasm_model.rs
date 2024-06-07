@@ -30,9 +30,9 @@ pub enum ExprSeg {
     Int(i64),
     Float32(f32),
     Float64(f64),
-    Local(i64),
-    Global(i64),
-    Func(i64),
+    Local(usize),
+    Global(usize),
+    Func(usize),
     BrTable(BrTableConst),
     Block(Box<WasmExpr>)
 }
@@ -89,9 +89,15 @@ impl WasmExpr {
                 ExprSeg::Float64(f) => {
                     wat += format!("{:}", f).as_str();
                 },
-                ExprSeg::Global(idx) => {},
-                ExprSeg::Local(idx) => {},
-                ExprSeg::Func(idx) => {},
+                ExprSeg::Global(idx) => {
+                    wat += format!("$global{:}", idx).as_str();
+                },
+                ExprSeg::Local(idx) => {
+                    wat += format!("$var{:}", idx).as_str();
+                },
+                ExprSeg::Func(idx) => {
+                    wat += format!("$func{:}", idx).as_str();
+                },
                 ExprSeg::BrTable(table_const) => {},
                 ExprSeg::Block(expr) => {
                     // Add extra characters for indentation
@@ -116,7 +122,6 @@ impl WasmExpr {
             let new_emit: String;
             (i, new_emit) = self.emit_block_wat(i);
             i += 1;
-            println!("i: {:} new_emit: {:}", i, new_emit);
             wat += new_emit.as_str();
             wat += ") ";
         }
