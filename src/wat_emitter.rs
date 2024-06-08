@@ -28,7 +28,9 @@ pub fn vec_to_string(vec: Vec<u8>) -> String {
 }
 
 pub fn indent(s: String, indent: u32) -> String {
-    (0..indent).fold(s, |acc, _| ("  ".to_string() + acc.as_str()))
+    let indentation = (0..indent).fold("".to_string(), |acc, _| ("  ".to_string() + acc.as_str()));
+    let indented = indentation.clone() + &s.replace("\n", &("\n".to_string() + &indentation));
+    indented.strip_suffix(&indentation).unwrap_or(&indented).to_string()
 }
 
 pub fn sig_to_wat(f: &WasmFunctionType) -> String {
@@ -104,8 +106,16 @@ pub fn emit_wat(wasm: WasmFile) -> String {
     }
 
     for (i, func) in wasm.code_section.functions.iter().enumerate() {
-        wat += &indent(format!("(func $func{:} {:})", i, func.body), 1);
+        wat += &indent(format!("(func $func{:}\n", i), 1);
+        wat += &indent(format!("{:}\n", func.body.emit_block_wat(0).1), 2);
+        wat += &indent(format!(")\n"), 1);
     }
+
+    for (_, data) in wasm.data_section.data_segs.iter().enumerate() {
+        wat += &indent(format!("(data {:} {:})\n", data.header.expr, from_utf8(data.data.as_slice()).unwrap_or("<PARSE ERROR>")), 1);
+    }
+
+    wat += ")";
 
     wat
 }
