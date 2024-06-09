@@ -528,7 +528,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             let _type = self.read_sized::<u8>(0)?;
             let mut locals_of_type = 
                 (0.._type).map(
-                    |_| WasmLocal {_type}
+                    |_| WasmLocal { _type: WasmTypeAnnotation { _type } }
                 ).collect();
             local_types.push((_type, num_type));
             locals.append(&mut locals_of_type);
@@ -543,7 +543,6 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         let body = self.read_expr()?; 
         Ok(WasmFunction{
             size,
-            _type: None,
             local_types,
             locals,
             body

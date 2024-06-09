@@ -381,12 +381,11 @@ pub struct WasmDataCountSection {
 
 #[derive(Debug, Clone, Copy)]
 pub struct WasmLocal{
-    pub _type: u8
+    pub _type: WasmTypeAnnotation
 }
 
 pub struct WasmFunction {
     pub size: usize,
-    pub _type: Option<WasmFunctionType>,
     pub local_types: Vec<(u8, usize)>,
     pub locals: Vec<WasmLocal>,
     pub body: WasmExpr,
@@ -396,7 +395,6 @@ impl Debug for WasmFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WasmFunction")
         .field("size", &self.size)
-        .field("_type", &self._type)
         .field("locals", &self.local_types.iter()
             .map(|local_type| {
                 format!("[{:}; {:}]", local_type.0, local_type.1)}
@@ -836,5 +834,8 @@ pub fn get_instr(name: &str) -> Option<InstrInfo> {
 impl WasmFile {
     pub fn get_import_sig(&self, import: &WasmImportHeader) -> &WasmFunctionType {
         &self.type_section.function_signatures[import.import_type as usize]
+    }
+    pub fn get_func_sig(&self, func: usize) -> &WasmFunctionType {
+        &self.type_section.function_signatures[self.function_section.function_signature_indexes[func] as usize]
     }
 }

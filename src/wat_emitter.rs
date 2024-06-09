@@ -33,7 +33,7 @@ pub fn indent(s: String, indent: u32) -> String {
     indented.strip_suffix(&indentation).unwrap_or(&indented).to_string()
 }
 
-pub fn sig_to_wat(f: &WasmFunctionType) -> String {
+pub fn sig_to_import_wat(f: &WasmFunctionType) -> String {
     let mut wat: String = "".to_string();
     if f.num_params != 0 {
         wat += "(param ";
@@ -52,6 +52,24 @@ pub fn sig_to_wat(f: &WasmFunctionType) -> String {
     wat
 }
 
+pub fn sig_to_wat(f: &WasmFunctionType) -> (usize, String) {
+    let mut wat: String = "".to_string();
+    if f.num_params != 0 {
+        wat += f.params.clone().iter().enumerate()
+                               .map(|(i, x)| format!("(param $var{} {})", i, type_to_str(*x))).collect::<Vec<String>>().join(" ").as_str();
+        if f.num_results != 0 {
+            wat += " ";
+        }
+    }
+
+    if f.num_results != 0 {
+        wat += "(result ";
+        wat += f.results.clone().iter().map(|x| type_to_str(*x)).collect::<Vec<String>>().join(" ").as_str();
+        wat += ")";
+    }
+    (f.params.len(), wat)
+}
+
 pub fn emit_wat(wasm: WasmFile) -> String {
     let mut wat: String = "(module\n".to_string();
     for (i, import) in wasm.import_section_header.imports.iter().enumerate() {
@@ -67,7 +85,7 @@ pub fn emit_wat(wasm: WasmFile) -> String {
             i,
             vec_to_string(import.import_module_name.clone()),
             vec_to_string(import.import_field.clone()),
-            sig_to_wat(wasm.get_import_sig(import))
+            sig_to_import_wat(wasm.get_import_sig(import))
         ), 1);
     }
 
@@ -106,7 +124,16 @@ pub fn emit_wat(wasm: WasmFile) -> String {
     }
 
     for (i, func) in wasm.code_section.functions.iter().enumerate() {
-        wat += &indent(format!("(func $func{:}\n", i), 1);
+        wat += &indent(format!("(func $func{:}", i), 1);
+        let (num_params, t) = sig_to_wat(wasm.get_func_sig(i));
+        wat += &t;
+        wat += "\n";
+
+        wat += &indent(func.locals.iter().enumerate()
+                        .map(|(i, x)| format!("(local $var{} {})", i + num_params, &type_to_str(x._type)))
+                        .reduce(|acc, s| (acc + " " + &s).to_string())
+                        .unwrap_or("".to_string()).to_string(), 2);
+
         wat += &indent(format!("{:}\n", func.body.emit_block_wat(0).1), 2);
         wat += &indent(format!(")\n"), 1);
     }
