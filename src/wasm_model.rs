@@ -42,6 +42,18 @@ pub struct WasmExpr{
     pub expr: Vec<ExprSeg>    
 }
 
+pub struct EmitterState {
+    start_segment: usize,
+    label: usize,
+}
+
+pub fn blank_emitter() -> EmitterState{
+    return EmitterState {
+        start_segment: 0,
+        label: 0
+    }
+}
+
 impl WasmExpr {
     pub fn new_box() -> Box<Self> {
         Box::new(
@@ -50,17 +62,17 @@ impl WasmExpr {
             }
         )
     }
-    pub fn emit_block_wat(&self, start_segment: usize) -> (usize, String) {
+    pub fn emit_block_wat(&self, state: EmitterState) -> (usize, String) {
         let mut wat = "".to_string();
         let mut emit_until = 0;
 
-        for (i, seg) in self.expr.iter().skip(start_segment).enumerate() {
+        for (i, seg) in self.expr.iter().skip(state.start_segment).enumerate() {
             match seg {
                 ExprSeg::Instr(info) => {
 
                     let special_case = get_edge_case(*info);
                     if special_case == SpecialInstr::EndBlock {
-                        return (i + start_segment, wat);
+                        return (i + state.start_segment, wat);
                     }
                     if i != 0 {
                         wat += "\n";
@@ -101,9 +113,15 @@ impl WasmExpr {
                 ExprSeg::BrTable(table_const) => {},
                 ExprSeg::Block(expr) => {
                     // Add extra characters for indentation
-                    wat += "  ";
-                    let (_, new_emit) = expr.emit_block_wat(0);
+                    wat += &format!("$label{}\n  ", state.label);
+                    
+                    let (_, new_emit) = expr.emit_block_wat(EmitterState {
+                        start_segment: 1,
+                        label: state.label + 1
+                    });
+
                     wat += new_emit.replace("\n", "\n  ").as_str();
+                    wat += "\nend";
                 },
             }
 
@@ -120,7 +138,10 @@ impl WasmExpr {
         while i < self.expr.len() - 1 {
             wat += "(";
             let new_emit: String;
-            (i, new_emit) = self.emit_block_wat(i);
+            (i, new_emit) = self.emit_block_wat(EmitterState {
+                start_segment: i,
+                label: 0,
+            });
             i += 1;
             wat += new_emit.as_str();
             wat += ") ";

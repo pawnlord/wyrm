@@ -99,7 +99,7 @@ pub fn emit_wat(wasm: WasmFile) -> String {
             wat += &indent(format!("(export \"{}\" (func $func{}))\n", from_utf8(export.export_name.as_slice()).unwrap(), export.export_signature_index), 1);
         }
         if export.export_kind == 2 {
-            wat += &indent(format!("(memory \"{}\" (memory $memory{}))\n", from_utf8(export.export_name.as_slice()).unwrap(), export.export_signature_index), 1);
+            wat += &indent(format!("(export \"{}\" (memory $memory{}))\n", from_utf8(export.export_name.as_slice()).unwrap(), export.export_signature_index), 1);
         }
     }
 
@@ -132,9 +132,9 @@ pub fn emit_wat(wasm: WasmFile) -> String {
         wat += &indent(func.locals.iter().enumerate()
                         .map(|(i, x)| format!("(local $var{} {})", i + num_params, &type_to_str(x._type)))
                         .reduce(|acc, s| (acc + " " + &s).to_string())
-                        .unwrap_or("".to_string()).to_string(), 2);
+                        .unwrap_or("".to_string()).to_string() + "\n", 2);
 
-        wat += &indent(format!("{:}\n", func.body.emit_block_wat(0).1), 2);
+        wat += &indent(format!("{:}\nend\n", func.body.emit_block_wat(blank_emitter()).1), 2);
         wat += &indent(format!(")\n"), 1);
     }
 
