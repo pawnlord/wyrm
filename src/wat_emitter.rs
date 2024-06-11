@@ -80,8 +80,8 @@ pub fn emit_wat(wasm: WasmFile) -> String {
             WasmImportType::Global => "global",
             _ => ""
         };
-        wat += &indent(format!("({} ${}{} (import \"{}\" \"{}\") {})\n",
-            type_str, type_str,
+        wat += &indent(format!("({} $import{} (import \"{}\" \"{}\") {})\n",
+            type_str, 
             i,
             vec_to_string(import.import_module_name.clone()),
             vec_to_string(import.import_field.clone()),
