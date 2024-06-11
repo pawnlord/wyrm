@@ -288,18 +288,19 @@ pub struct WasmMemoryStruct {
     pub limits_initial: usize,
     pub limits_max: usize,
 }
+#[derive(Debug, Clone)]
+pub struct WasmGlobal {
+    pub wasm_type: WasmTypeAnnotation,
+    pub mutability: u8,
+    pub expr: WasmExpr
+}
+
 
 #[derive(Debug)]
 pub struct WasmGlobalSection {
     pub section_size: usize,
     pub num_globals: usize,
     pub globals: Vec<WasmGlobal>,
-}
-#[derive(Debug, Clone, Copy)]
-pub struct WasmGlobal {
-    pub wasm_type: WasmTypeAnnotation,
-    pub mutability: u8,
-    pub data: WasmTypedData,
 }
 
 #[derive(Debug)]

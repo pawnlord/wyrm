@@ -11,69 +11,16 @@ use crate::wasm_model::*;
 
 
 fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<WasmGlobal, Error> {
-    let mut global: WasmGlobal = WasmGlobal {
-        wasm_type: WasmTypeAnnotation { _type: 0 },
-        mutability: 0,
-        data: WasmTypedData::F32(0.0),
-    };
-    global.wasm_type = state.read_sized(WasmTypeAnnotation { _type: 0 })?;
-    global.mutability = state.read_sized(0)?;
+    
+    let wasm_type = state.read_sized(WasmTypeAnnotation { _type: 0 })?;
+    let mutability = state.read_sized(0)?;
+    let expr = state.read_expr()?;
 
-    // This section is currently incomplete. The proper way of reading a global involves evaluating the expression
-    // given before the end block. Hopefully as this project progresses we have an easy way of evaluating constant (non-
-    // state dependent) expressions easily
-
-    // For now we are assuming it's just going to put a constant on the stack, and that value is going to be our
-    // global value. Hopefully I can find examples where it doesn't do this to get this to work in the future.
-
-    match global.wasm_type {
-        // f64
-        WasmTypeAnnotation { _type: 0x7c } => {
-            assert_eq!(
-                state.read_sized(0)?,
-                0x44 as u8,
-                "Global is not a f64 const value"
-            );
-            global.data = WasmTypedData::F64(state.read_sized(0.0)?);
-        }
-        // TODO:: Confirm this is f32
-        WasmTypeAnnotation { _type: 0x7d } => {
-            assert_eq!(
-                state.read_sized(0)?,
-                0x43 as u8,
-                "Global is not a f32 const value"
-            );
-            global.data = WasmTypedData::F32(state.read_sized(0.0)?);
-        }
-        // i64
-        WasmTypeAnnotation { _type: 0x7e } => {
-            assert_eq!(
-                state.read_sized(0)?,
-                0x42 as u8,
-                "Global is not a i64 const value"
-            );
-            global.data = WasmTypedData::I64(state.read_dynamic_uint(0)? as i64);
-        }
-        // i32
-        WasmTypeAnnotation { _type: 0x7f } => {
-            assert_eq!(
-                state.read_sized(0)?,
-                0x41 as u8,
-                "Global is not a i32 const value"
-            );
-            global.data = WasmTypedData::I32(state.read_dynamic_uint(0)? as i32);
-        }
-        _ => panic!(
-            "No suitable type to read for global. Global struct: {:?}. State: {:?}",
-            global, state
-        ),
-    }
-
-    let end = state.read_sized::<u8>(0)?;
-    // let end = state.read_sized::<u8>(0)?;
-    assert_eq!(end, 0x0b);
-
-    Ok(global)
+    Ok(WasmGlobal {
+        wasm_type,
+        mutability,
+        expr
+    })
 }
 
 #[derive(Debug)]

@@ -33,7 +33,10 @@ pub fn indent(s: String, indent: u32) -> String {
     indented.strip_suffix(&indentation).unwrap_or(&indented).to_string()
 }
 
-pub fn sig_to_import_wat(f: &WasmFunctionType) -> String {
+impl WasmFile {
+
+
+pub fn sig_to_import_wat(&self, f: &WasmFunctionType) -> String {
     let mut wat: String = "".to_string();
     if f.num_params != 0 {
         wat += "(param ";
@@ -52,7 +55,7 @@ pub fn sig_to_import_wat(f: &WasmFunctionType) -> String {
     wat
 }
 
-pub fn sig_to_wat(f: &WasmFunctionType) -> (usize, String) {
+pub fn sig_to_wat(&self, f: &WasmFunctionType) -> (usize, String) {
     let mut wat: String = "".to_string();
     if f.num_params != 0 {
         wat += f.params.clone().iter().enumerate()
@@ -68,6 +71,73 @@ pub fn sig_to_wat(f: &WasmFunctionType) -> (usize, String) {
         wat += ")";
     }
     (f.params.len(), wat)
+}
+pub fn export_to_wat(&self, export: &WasmExportHeader) -> String{
+    // TODO: Need to find list of these export kinds
+    if export.export_kind == 0 {
+        return format!("(export \"{}\" (func $func{}))\n", from_utf8(export.export_name.as_slice()).unwrap(), export.export_signature_index);
+    }
+    if export.export_kind == 2 {
+        return format!("(export \"{}\" (memory $memory{}))\n", from_utf8(export.export_name.as_slice()).unwrap(), export.export_signature_index);
+    }
+    return "".to_string();
+}
+
+pub fn table_to_wat(&self, table: &WasmTable) -> String {
+    format!("(table {} {} {})\n", table.limits_initial, table.limits_max, type_to_str(WasmTypeAnnotation { _type: table.wasm_type}))
+}
+
+pub fn elem_to_wat(&self, i: usize, elem: &WasmElem) -> String {
+    let reftype = match elem._type {
+        WasmRefType::FuncRef => "funcref",
+        WasmRefType::ExternRef => "externref",
+    };
+
+    match &elem.mode {
+        WasmElemMode::Passive => {
+            format!("(elem $elem{:} {:} {:})\n", i, reftype, elem.init)
+        },
+        WasmElemMode::Active(active_struct) => {
+            format!("(elem $elem{:} {:} {:} {:})\n", i, active_struct.offset_expr, reftype, elem.init)
+        },
+        WasmElemMode::Declarative => {
+            format!("(elem $elem{:} {:} {:})\n", i, reftype, elem.init)
+        }
+    }
+}
+
+pub fn func_to_wat(&self, i: usize, func: &WasmFunction) -> String {
+    let mut wat: String = "".to_string(); 
+    wat += &format!("(func $func{:}", i);
+    let (num_params, t) = self.sig_to_wat(self.get_func_sig(i));
+    wat += &t;
+    wat += "\n";
+
+    wat += &indent(func.locals.iter().enumerate()
+                    .map(|(i, x)| format!("(local $var{} {})", i + num_params, &type_to_str(x._type)))
+                    .reduce(|acc, s| (acc + " " + &s).to_string())
+                    .unwrap_or("".to_string()).to_string() + "\n", 1);
+
+    wat += &indent(format!("{:}\nend\n", func.body.emit_block_wat(blank_emitter()).1), 1);
+    wat += ")\n";
+    wat
+}
+
+pub fn memory_to_wat(&self, i: usize, memory: &WasmMemoryStruct) -> String {
+    // TODO: Figure out what the second value is
+    format!("(memory $memory{} {} {})\n", i, memory.limits_initial, memory.limits_flags)
+}
+pub fn global_to_wat(&self, i: usize, global: &WasmGlobal) -> String {
+    format!("(global $global{} ({} {}) ({}))\n", i, if global.mutability != 0 {
+        "mut"
+    } else {
+        "immut"
+    }, type_to_str(global.wasm_type), global.expr)
+}
+pub fn data_to_wat(&self, data: &WasmDataSeg) -> String {
+    format!("(data {:} {:})\n", data.header.expr, from_utf8(data.data.as_slice()).unwrap_or("<PARSE ERROR>"))
+}
+
 }
 
 pub fn emit_wat(wasm: WasmFile) -> String {
@@ -85,61 +155,36 @@ pub fn emit_wat(wasm: WasmFile) -> String {
             i,
             vec_to_string(import.import_module_name.clone()),
             vec_to_string(import.import_field.clone()),
-            sig_to_import_wat(wasm.get_import_sig(import))
+            wasm.sig_to_import_wat(wasm.get_import_sig(import))
         ), 1);
     }
-
-    for (i, table) in wasm.table_section.tables.iter().enumerate() {
-        wat += &indent(format!("(table {} {} {})\n", table.limits_initial, table.limits_max, type_to_str(WasmTypeAnnotation { _type: table.wasm_type})), 1);
+    
+    for (_, table) in wasm.table_section.tables.iter().enumerate() {
+        wat += &indent(wasm.table_to_wat(table), 1);
     }
 
-    for (i, export) in wasm.export_section.exports.iter().enumerate() {
-        // TODO: Need to find list of these export kinds
-        if export.export_kind == 0 {
-            wat += &indent(format!("(export \"{}\" (func $func{}))\n", from_utf8(export.export_name.as_slice()).unwrap(), export.export_signature_index), 1);
-        }
-        if export.export_kind == 2 {
-            wat += &indent(format!("(export \"{}\" (memory $memory{}))\n", from_utf8(export.export_name.as_slice()).unwrap(), export.export_signature_index), 1);
-        }
+    for (i, memory) in wasm.memory_section.memories.iter().enumerate() {
+        wat += &indent(wasm.memory_to_wat(i, memory), 1);
+    }
+    
+    for (i, global) in wasm.global_section.globals.iter().enumerate() {
+        wat += &indent(wasm.global_to_wat(i, global), 1);
+    }
+
+    for (_, export) in wasm.export_section.exports.iter().enumerate() {
+        wat += &indent(wasm.export_to_wat(export), 1);
     }
 
     for (i, elem) in wasm.elem_section.elems.iter().enumerate() {
-        let reftype = match elem._type {
-            WasmRefType::FuncRef => "funcref",
-            WasmRefType::ExternRef => "externref",
-        };
-
-        match &elem.mode {
-            WasmElemMode::Passive => {
-                wat += &indent(format!("(elem $elem{:} {:} {:})\n", i, reftype, elem.init), 1);
-            },
-            WasmElemMode::Active(active_struct) => {
-                wat += &indent(format!("(elem $elem{:} {:} {:} {:})\n", i, active_struct.offset_expr, reftype, elem.init), 1);
-
-            },
-            WasmElemMode::Declarative => {
-                wat += &indent(format!("(elem $elem{:} {:} {:})\n", i, reftype, elem.init), 1);
-            }
-        }
+        wat += &indent(wasm.elem_to_wat(i, elem), 1);
     }
 
     for (i, func) in wasm.code_section.functions.iter().enumerate() {
-        wat += &indent(format!("(func $func{:}", i), 1);
-        let (num_params, t) = sig_to_wat(wasm.get_func_sig(i));
-        wat += &t;
-        wat += "\n";
-
-        wat += &indent(func.locals.iter().enumerate()
-                        .map(|(i, x)| format!("(local $var{} {})", i + num_params, &type_to_str(x._type)))
-                        .reduce(|acc, s| (acc + " " + &s).to_string())
-                        .unwrap_or("".to_string()).to_string() + "\n", 2);
-
-        wat += &indent(format!("{:}\nend\n", func.body.emit_block_wat(blank_emitter()).1), 2);
-        wat += &indent(format!(")\n"), 1);
+        wat += &indent(wasm.func_to_wat(i, func), 1);
     }
 
     for (_, data) in wasm.data_section.data_segs.iter().enumerate() {
-        wat += &indent(format!("(data {:} {:})\n", data.header.expr, from_utf8(data.data.as_slice()).unwrap_or("<PARSE ERROR>")), 1);
+        wat += &indent(wasm.data_to_wat(data), 1);
     }
 
     wat += ")";
