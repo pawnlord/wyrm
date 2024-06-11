@@ -112,12 +112,12 @@ pub fn func_to_wat(&self, i: usize, func: &WasmFunction) -> String {
     let (num_params, t) = self.sig_to_wat(self.get_func_sig(i));
     wat += &t;
     wat += "\n";
-
-    wat += &indent(func.locals.iter().enumerate()
-                    .map(|(i, x)| format!("(local $var{} {})", i + num_params, &type_to_str(x._type)))
-                    .reduce(|acc, s| (acc + " " + &s).to_string())
-                    .unwrap_or("".to_string()).to_string() + "\n", 1);
-
+    if func.locals.len() > 0 {
+        wat += &indent(func.locals.iter().enumerate()
+                        .map(|(i, x)| format!("(local $var{} {})", i + num_params, &type_to_str(x._type)))
+                        .reduce(|acc, s| (acc + " " + &s).to_string())
+                        .unwrap_or("".to_string()).to_string() + "\n", 1);
+    }
     wat += &indent(format!("{:}\nend\n", func.body.emit_block_wat(blank_emitter()).1), 1);
     wat += ")\n";
     wat
@@ -134,6 +134,7 @@ pub fn global_to_wat(&self, i: usize, global: &WasmGlobal) -> String {
         "immut"
     }, type_to_str(global.wasm_type), global.expr)
 }
+
 pub fn data_to_wat(&self, data: &WasmDataSeg) -> String {
     format!("(data {:} {:})\n", data.header.expr, from_utf8(data.data.as_slice()).unwrap_or("<PARSE ERROR>"))
 }

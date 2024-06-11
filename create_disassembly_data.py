@@ -118,6 +118,9 @@ for i, line in enumerate(lines):
                 prev_op.takes_alignment or add_alignment, 
                 prev_op.type
             )
+ops["call"].type[0] = Type.FUNC
+# TODO: Check that this is not picking up of func second
+ops["ref.func"].type[0] = Type.FUNC
 
 text = "Collected instructions in output"
 print("*" + ("="*20) + f" {text:<30} " + ("="*20) + "*")

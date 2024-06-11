@@ -360,7 +360,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         let expr = ys.iter().flat_map(|y| {
             vec![
                 ExprSeg::Instr(get_instr("ref.func").unwrap()),
-                ExprSeg::Int(*y as i64),
+                ExprSeg::Func(*y as usize),
                 ExprSeg::Instr(get_instr("end").unwrap()),
             ]
         }).collect();

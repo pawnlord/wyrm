@@ -19,7 +19,6 @@ for key, value in items:
     print(f"op: {key:<30} name: {value.name:<30} args: {value.has_arg:<30} result_type: {value.type[0]:<32} arg_type: {value.type[1]:<32} aligned: {value.takes_alignment:<32}")
 
 # Produce rust representation
-print(ops)
 
 ops_int = {int(k,16): info for k, info in ops.items()}
 
