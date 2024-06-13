@@ -83,8 +83,8 @@ pub fn export_to_wat(&self, export: &WasmExportHeader) -> String{
     return "".to_string();
 }
 
-pub fn table_to_wat(&self, table: &WasmTable) -> String {
-    format!("(table {} {} {})\n", table.limits_initial, table.limits_max, type_to_str(WasmTypeAnnotation { _type: table.wasm_type}))
+pub fn table_to_wat(&self, i: usize, table: &WasmTable) -> String {
+    format!("(table $table{} {} {} {})\n", i, table.limits_initial, table.limits_max, type_to_str(WasmTypeAnnotation { _type: table.wasm_type}))
 }
 
 pub fn elem_to_wat(&self, i: usize, elem: &WasmElem) -> String {
@@ -160,8 +160,8 @@ pub fn emit_wat(wasm: WasmFile) -> String {
         ), 1);
     }
     
-    for (_, table) in wasm.table_section.tables.iter().enumerate() {
-        wat += &indent(wasm.table_to_wat(table), 1);
+    for (i, table) in wasm.table_section.tables.iter().enumerate() {
+        wat += &indent(wasm.table_to_wat(i, table), 1);
     }
 
     for (i, memory) in wasm.memory_section.memories.iter().enumerate() {
