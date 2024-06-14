@@ -17,5 +17,5 @@ fn main() {
 
     };
     let wasm_file = file_reader::wasm_deserialize(file).unwrap();
-    println!("{:}", emit_wat(wasm_file));
+    println!("{:}", emit_wat(&wasm_file));
 }

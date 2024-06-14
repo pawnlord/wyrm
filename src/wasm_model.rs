@@ -71,24 +71,26 @@ impl WasmExpr {
                 ExprSeg::Instr(info) => {
 
                     let special_case = get_edge_case(*info);
+                    
                     if special_case == SpecialInstr::EndBlock {
                         return (i + state.start_segment, wat);
                     }
+    
                     if i != 0 {
                         wat += "\n";
                     }
 
                     wat += format!("{:}", info.name).as_str();
 
-                    emit_until = 0;
-
                     // Figure out how many expressions come after this one
-                    if special_case == SpecialInstr::CallIndirect {
-                        emit_until += 2;
+                    emit_until = if special_case == SpecialInstr::CallIndirect {
+                        2
                     } else if special_case == SpecialInstr::BeginBlock {
-                        emit_until += 1;
+                        1
                     } else if info.has_const {
-                        emit_until += 1;
+                        1
+                    } else {
+                        0
                     }
 
                 },
@@ -121,7 +123,7 @@ impl WasmExpr {
                     });
 
                     wat += new_emit.replace("\n", "\n  ").as_str();
-                    wat += "\nend";
+                    wat += format!("\nend $label{}", state.label).as_str();
                 },
             }
 
@@ -132,6 +134,7 @@ impl WasmExpr {
         }
         (self.expr.len() - 1, wat)
     }
+    
     pub fn emit_expression_wat(&self) -> String {
         let mut wat = "".to_string();
         let mut i = 0;
