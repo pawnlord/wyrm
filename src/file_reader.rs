@@ -149,8 +149,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                 self.read_sized::<u8>(0)?;
             }
             
-            if info.has_const {
-                match info.out_type {
+            for constant in info.constants {
+                match constant{
                     Prim::F32 => {
                         expr.push(ExprSeg::Float32(self.read_sized(0.0)?));
                     }
