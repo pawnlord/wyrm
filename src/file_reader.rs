@@ -151,7 +151,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             }
             
             for constant in info.constants {
-                match constant{
+                match constant {
                     Prim::F32 => {
                         expr.push(ExprSeg::Float32(self.read_sized(0.0)?));
                     }
@@ -170,6 +170,10 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                         let num = self.read_dynamic_uint(0)?;
                         expr.push(ExprSeg::Func(num));
                     }
+                    Prim::Void => {
+                        // void or align
+                        let num = self.read_sized::<u8>(0)?;
+                    }
                     // Number
                     _ => {
                         let num = self.read_dynamic_int(0)?;
@@ -183,7 +187,6 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                 // Push the scope
                 scope.push(last_scope);
                 last_scope = expr_box;
-
                 // Create a new scope
                 expr_box = WasmExpr::new_box();
             }
@@ -610,6 +613,23 @@ pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
     };
 
     while let Ok(section_type) = state.read_sized::<u8>(0) {
+        match section_type {
+            0x01 => println!(" = state.read_type_section()?"),
+            0x02 => println!(" = state.read_import_section()?"),
+            0x03 => println!(" = state.read_function_section()?"),
+            0x04 => println!(" = state.read_table_section()?"),
+            0x05 => println!(" = state.read_memory_section()?"),
+            0x06 => println!(" = state.read_global_section()?"),
+            0x07 => println!(" = state.read_export_section()?"),
+            0x09 => println!(" = state.read_elem_section()?"),
+            0x0a => println!(" = state.read_code_section()?"),
+            0x0b => println!(" = state.read_data_section()?"),
+            0x0c => println!(" = state.read_data_count_section()?"),
+            _ => {
+                break
+            }
+        }
+
         match section_type {
             0x01 => type_section = state.read_type_section()?,
             0x02 => import_section_header = state.read_import_section()?,
