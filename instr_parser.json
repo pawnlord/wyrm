@@ -1,0 +1,6 @@
+{
+    "extensions": false,
+    "core": ["CONTROL_OPCODE", "MISC_OPCODE", "LOAD_MEM_OPCODE", "STORE_MEM_OPCODE", 
+             "MISC_MEM_OPCODE", "SIMPLE_EXTENDED_CONST_OPCODE", "SIMPLE_NON_CONST_OPCODE",
+             "ASMJS_COMPAT_OPCODE"]
+}

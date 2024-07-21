@@ -8,6 +8,7 @@ use std::{
 };
 
 use crate::wasm_model::*;
+use crate::instr_table::*;
 
 
 fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<WasmGlobal, Error> {

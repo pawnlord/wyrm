@@ -1,11 +1,12 @@
 use std::fs::File;
 
-use wasm_model::INSTRS;
 
+use crate::instr_table::INSTRS;
 use crate::wat_emitter::emit_wat;
 
 mod wasm_model;
 mod file_reader;
+mod instr_table;
 mod wat_emitter;
 mod pipeline;
 mod usdm;
