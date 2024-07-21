@@ -20,15 +20,20 @@ fn main() {
     let mut extensions_enabled = false;
     
     // Core part of instruction set, pretty much 0-256
-    let mut core = vec!["CONTROL_OPCODE", "MISC_OPCODE", "LOAD_MEM_OPCODE", "STORE_MEM_OPCODE", 
+    let core = vec!["CONTROL_OPCODE", "MISC_OPCODE", "LOAD_MEM_OPCODE", "STORE_MEM_OPCODE", 
         "MISC_MEM_OPCODE", "SIMPLE_EXTENDED_CONST_OPCODE", "SIMPLE_NON_CONST_OPCODE",
         "ASMJS_COMPAT_OPCODE"];
+    
     let mut core: Vec<String> = core.iter().map(|x| x.to_string()).collect();
 
     {
+        // Config letting us know what we want to be using
+        // There are a few wasm extensions, don't really want to go through them all right now
+        // so this is here
+        // No config defaults to a simple set for the core, and no extensions enabled
         let config = File::open("instr_parser.json");
         if let Ok(config) = config {
-            let mut reader = BufReader::new(config);
+            let reader = BufReader::new(config);
             
             let config: Value = serde_json::from_reader(reader)
                 .expect("Failed to open instr_parser.json!!");
@@ -42,6 +47,8 @@ fn main() {
 
     let instructions: Value = {
         let Ok(f) = File::open("instr_table.json") else {
+            // If we don't have anything, just write an empty array
+            // The build will still happen, but it won't be usable
             println!("cargo::warning=No instruction table provided, minimal data being written");
             let f = File::open(out_dir + "/instr_table.rs")
                 .expect("Could not open ouput instr_table.rs!!");
@@ -69,6 +76,10 @@ fn main() {
         }
     }
 
+    if extensions_enabled {
+        todo!("WASM Extensions not yet supported");
+    }
+
     {
         let f = File::create(out_dir + "/instr_table.rs")
             .expect("Could not open ouput instr_table.rs!!");
@@ -80,12 +91,21 @@ fn main() {
         for i in 0..=255 {
             instruction_list += "\n";            
             let instr = instr_list.get(&i).clone();
-            if instr.is_none() {                
+            if instr.is_none() {
+                // No instruction, but we need to keep the instructions in order...
                 let instr_string = format!(
                 r#"    InstrInfo{{instr: {:#x}, name: "", in_types: &[], out_types: &[], constants: &[], takes_align: false}},"#, i);
                 instruction_list += instr_string.as_str();                
                 continue;
             }
+
+            
+            // Instruction table JSON format is 
+            // <section> : { <instruction name> : {"name": <name>, 
+            //                  signature: [<in>, <out>, <constants>],
+            //                  opcode: <opcode>
+            //                },...
+            //              }, ...
             let instr = instr.unwrap();
 
             let name = instr["name"].as_str().unwrap();
