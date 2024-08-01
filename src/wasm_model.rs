@@ -28,7 +28,8 @@ pub struct BrTableConst {
 
 #[derive(Debug, Clone)]
 pub enum ExprSeg {
-    Instr(InstrInfo),
+    Operation(InstrInfo),
+    ControlFlow(InstrInfo, Box<WasmExpr>, InstrInfo),
     // Raw bits of an int, signage and other things are figured out later (all ints are stored in the same manner)
     Int(i64),
     Float32(f32),
@@ -37,14 +38,64 @@ pub enum ExprSeg {
     Global(usize),
     Func(usize),
     BrTable(BrTableConst),
-    Block(Box<WasmExpr>)
+    Instr(Vec<ExprSeg>)
+}
+
+impl ExprSeg {
+    pub fn emit_wat(&self, mut wat: String, state: EmitterState) -> String{
+        match self {
+            ExprSeg::Operation(info) => {
+                wat += format!("{:}", info.name).as_str();
+            },
+            ExprSeg::Int(i) => {
+                wat += format!("{:}", i).as_str();
+            },
+            ExprSeg::Float32(f) => {
+                wat += format!("{:}", f).as_str();
+            },
+            ExprSeg::Float64(f) => {
+                wat += format!("{:}", f).as_str();
+            },
+            ExprSeg::Global(idx) => {
+                wat += format!("$global{:}", idx).as_str();
+            },
+            ExprSeg::Local(idx) => {
+                wat += format!("$var{:}", idx).as_str();
+            },
+            ExprSeg::Func(idx) => {
+                wat += format!("$func{:}", idx).as_str();
+            },
+            ExprSeg::BrTable(table_const) => {},
+            ExprSeg::ControlFlow(info, expr, end_info) => {
+                // Add extra characters for indentation
+                wat += &format!("{:} $label{}\n  ", info.name, state.label);
+                
+                let (_, new_emit) = expr.emit_block_wat(EmitterState {
+                    start_segment: 0,
+                    label: state.label + 1
+                });
+
+                wat += new_emit.replace("\n", "\n  ").as_str();
+                wat += format!("\n{:} $label{}\n", end_info.name, state.label).as_str();
+            },
+            ExprSeg::Instr(instr_expr) => {
+                for seg in instr_expr {
+                    wat = seg.emit_wat(wat, state) + " ";
+                }
+                wat = wat + "\n";
+            }
+            _ => {},
+        }
+        wat
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct WasmExpr{
-    pub expr: Vec<ExprSeg>    
+    pub raw_expr_string: Vec<ExprSeg>
 }
 
+#[derive(Clone, Copy)]
 pub struct EmitterState {
     start_segment: usize,
     label: usize,
@@ -61,7 +112,7 @@ impl WasmExpr {
     pub fn new_box() -> Box<Self> {
         Box::new(
             Self {
-                expr: vec![]
+                raw_expr_string: vec![]
             }
         )
     }
@@ -69,23 +120,19 @@ impl WasmExpr {
         let mut wat = "".to_string();
         let mut emit_until = 0;
 
-        for (i, seg) in self.expr.iter().skip(state.start_segment).enumerate() {
+        for (i, seg) in self.raw_expr_string.iter().skip(state.start_segment).enumerate() {
             match seg {
-                ExprSeg::Instr(info) => {
+                ExprSeg::Operation(info) => {
 
                     let special_case = get_edge_case(*info);
                     
                     if special_case == SpecialInstr::EndBlock {
-                        return (i + state.start_segment, wat);
+                        return (state.start_segment + i, wat);
                     }
     
-                    if i != 0 {
-                        wat += "\n";
-                    }
-
                     wat += format!("{:}", info.name).as_str();
 
-                    // Figure out how many expressions come after this one
+                    // Figure out how many expression segments come after this one
                     emit_until = if special_case == SpecialInstr::CallIndirect {
                         2
                     } else if special_case == SpecialInstr::BeginBlock {
@@ -95,53 +142,36 @@ impl WasmExpr {
                     } else {
                         0
                     }
-
                 },
-                ExprSeg::Int(i) => {
-                    wat += format!("{:}", i).as_str();
-                },
-                ExprSeg::Float32(f) => {
-                    wat += format!("{:}", f).as_str();
-                },
-                ExprSeg::Float64(f) => {
-                    wat += format!("{:}", f).as_str();
-                },
-                ExprSeg::Global(idx) => {
-                    wat += format!("$global{:}", idx).as_str();
-                },
-                ExprSeg::Local(idx) => {
-                    wat += format!("$var{:}", idx).as_str();
-                },
-                ExprSeg::Func(idx) => {
-                    wat += format!("$func{:}", idx).as_str();
-                },
-                ExprSeg::BrTable(table_const) => {},
-                ExprSeg::Block(expr) => {
+                ExprSeg::ControlFlow(info, expr, end_info) => {
                     // Add extra characters for indentation
-                    wat += &format!("$label{}\n  ", state.label);
+                    wat += &format!("{} $label{}\n  ", info.name, state.label);
                     
                     let (_, new_emit) = expr.emit_block_wat(EmitterState {
-                        start_segment: 1,
+                        start_segment: 0,
                         label: state.label + 1
                     });
 
-                    wat += new_emit.replace("\n", "\n  ").as_str();
-                    wat += format!("\nend $label{}", state.label).as_str();
+                    wat += new_emit.replace("\n", "\n  ").trim_end();
+                    wat += format!("\n{:} $label{}\n", end_info.name, state.label).as_str();
                 },
+                _ => {
+                    wat = seg.emit_wat(wat, state);
+                }
             }
 
             if emit_until > 0 {
                 wat += " ";
                 emit_until -= 1;
-            }
+            } 
         }
-        (self.expr.len() - 1, wat)
+        (self.raw_expr_string.len() - 1, wat)
     }
     
     pub fn emit_expression_wat(&self) -> String {
         let mut wat = "".to_string();
         let mut i = 0;
-        while i < self.expr.len() - 1 {
+        while i < self.raw_expr_string.len() - 1 {
             wat += "(";
             let new_emit: String;
             (i, new_emit) = self.emit_block_wat(EmitterState {
@@ -149,7 +179,7 @@ impl WasmExpr {
                 label: 0,
             });
             i += 1;
-            wat += new_emit.as_str();
+            wat += new_emit.trim_end();
             wat += ") ";
         }
         // Remove extraneous space
@@ -157,6 +187,7 @@ impl WasmExpr {
 
         wat
     }
+
 }
 
 impl Display for WasmExpr {
@@ -537,16 +568,16 @@ pub fn calc_dyn_size(mut i: i64) -> usize {
 
 pub fn calculate_body_len(expr: &WasmExpr) -> usize {
     let mut total = 0;
-    for seg in expr.expr.clone() {
+    for seg in expr.raw_expr_string.clone() {
         total += match seg {
-            ExprSeg::Instr(_) => 1,
+            ExprSeg::Operation(_) => 1,
             ExprSeg::Int(i) => calc_dyn_size(i),
             ExprSeg::Float32(_) => 4,
             ExprSeg::Float64(_) => 8,
             ExprSeg::BrTable(tab) => calc_dyn_size(tab.default as i64) 
                 + tab.break_depths.iter()
                     .fold(0, |acc: usize, i| acc + calc_dyn_size(*i as i64)),
-            ExprSeg::Block(block) => calculate_body_len(block.as_ref()),
+            ExprSeg::ControlFlow(_, block, _) => calculate_body_len(block.as_ref()),
             _ => 0
         }
     }

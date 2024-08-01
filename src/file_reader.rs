@@ -117,27 +117,29 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         let mut last_scope = WasmExpr::new_box();
         let mut expr_box = WasmExpr::new_box();
         let mut level: i32 = 0;
+        let mut control_flow: Vec<InstrInfo> = Vec::new();
         while let Ok(byte) = self.read_sized::<u8>(0) {
             let info = INSTRS[byte as usize];
-            let expr = &mut expr_box.expr;
-            expr.push(ExprSeg::Instr(info));
+            let expr = &mut expr_box.raw_expr_string;
+            let mut instr_layout = vec![ExprSeg::Operation(info)];
             let special_case = get_edge_case(info);
             
             if special_case == SpecialInstr::BrTable {
                 let num = self.read_dynamic_uint(0)?;
                 let break_depths = self.read_vector_dynamic(num)?;
                 let default = self.read_dynamic_uint(0)?;
-                expr.push(ExprSeg::BrTable(BrTableConst {
+                instr_layout.push(ExprSeg::BrTable(BrTableConst {
                     break_depths,
                     default
                 }));
+                expr.push(ExprSeg::Instr(instr_layout));
                 continue;
             }
 
             if special_case == SpecialInstr::CallIndirect {
-                expr.push(ExprSeg::Instr(info));
-                expr.push(ExprSeg::Int(self.read_dynamic_int(0)?));
-                expr.push(ExprSeg::Int(self.read_dynamic_int(0)?));
+                instr_layout.push(ExprSeg::Int(self.read_dynamic_int(0)?));
+                instr_layout.push(ExprSeg::Int(self.read_dynamic_int(0)?));
+                expr.push(ExprSeg::Instr(instr_layout));
                 continue;
             }
 
@@ -153,22 +155,22 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             for constant in info.constants {
                 match constant {
                     Prim::F32 => {
-                        expr.push(ExprSeg::Float32(self.read_sized(0.0)?));
+                        instr_layout.push(ExprSeg::Float32(self.read_sized(0.0)?));
                     }
                     Prim::F64 => {
-                        expr.push(ExprSeg::Float64(self.read_sized(0.0)?));
+                        instr_layout.push(ExprSeg::Float64(self.read_sized(0.0)?));
                     }
                     Prim::Global => {
                         let num = self.read_dynamic_uint(0)?;
-                        expr.push(ExprSeg::Local(num));
+                        instr_layout.push(ExprSeg::Local(num));
                     }
                     Prim::Local => {
                         let num = self.read_dynamic_uint(0)?;
-                        expr.push(ExprSeg::Global(num));
+                        instr_layout.push(ExprSeg::Global(num));
                     }
                     Prim::Func => {
                         let num = self.read_dynamic_uint(0)?;
-                        expr.push(ExprSeg::Func(num));
+                        instr_layout.push(ExprSeg::Func(num));
                     }
                     Prim::Void => {
                         // void or align
@@ -177,30 +179,39 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                     // Number
                     _ => {
                         let num = self.read_dynamic_int(0)?;
-                        expr.push(ExprSeg::Int(num));
+                        instr_layout.push(ExprSeg::Int(num));
                     }
                 }
             }
 
+
+            // Control flow is special when it comes to being an "instruction"
             if special_case == SpecialInstr::BeginBlock {
+                control_flow.push(info);
                 level += 1;
                 // Push the scope
                 scope.push(last_scope);
                 last_scope = expr_box;
                 // Create a new scope
                 expr_box = WasmExpr::new_box();
+                continue;
             }
 
             if special_case == SpecialInstr::EndBlock {
+                // TODO: This is dirty, change later
+                expr.push(ExprSeg::Operation(info));
                 level -= 1;
                 if level < 0 {
                     break;
                 }
                 // pop the scope
-                last_scope.expr.push(ExprSeg::Block(expr_box));
+                let control_flow_context = control_flow.pop().unwrap();
+                last_scope.raw_expr_string.push(ExprSeg::ControlFlow(control_flow_context, expr_box, info));
                 expr_box = last_scope;
                 last_scope = scope.pop().unwrap();
+                continue;
             }
+            expr.push(ExprSeg::Instr(instr_layout));
         }
         Ok(*expr_box)
 
@@ -363,13 +374,13 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     fn create_elem_expr(ys: Vec<usize>) -> WasmExpr {
         let expr = ys.iter().flat_map(|y| {
             vec![
-                ExprSeg::Instr(get_instr("ref.func").unwrap()),
+                ExprSeg::Operation(get_instr("ref.func").unwrap()),
                 ExprSeg::Func(*y as usize),
-                ExprSeg::Instr(get_instr("end").unwrap()),
+                ExprSeg::Operation(get_instr("end").unwrap()),
             ]
         }).collect();
 
-        WasmExpr {expr}
+        WasmExpr {raw_expr_string: expr}
     }
 
     fn read_elem(&mut self) -> Result<WasmElem, Error> {
