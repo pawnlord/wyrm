@@ -26,6 +26,53 @@ pub struct BrTableConst {
     pub default: usize,
 }
 
+
+/*
+ * An IdiomPattern is made from the IdiomGrammar, and when found
+ * creates a WasmIdiom
+*/
+#[derive(Debug, Clone)]
+pub enum IdiomGrammar
+{
+   StrictExpr(WasmExpr),
+   // Single-segment wildcard
+   InstrWildcard,
+   // Multi-segment wildcard
+   ExprWildcard,
+   
+}
+
+#[derive(Debug, Clone)]
+pub struct WasmIdiomPattern {
+    pub pattern: Vec<IdiomGrammar>
+}
+
+impl WasmIdiomPattern {
+
+    fn independent_expr(expr: WasmExpr) -> Self {
+        let expr = expr.parse_string().expect("Error parsing Idiom pattern");
+        Self {
+            pattern: vec![IdiomGrammar::StrictExpr(expr)]
+        }
+    }
+
+    // An example of an idiom, will research more later
+    pub fn double() -> Self {
+        Self::independent_expr(
+            new_expr(vec![
+                get_op_seg("shl"), ExprSeg::Int(1)
+            ])
+        )
+    }
+}
+
+
+#[derive(Debug, Clone)]
+pub enum WasmIdiom {
+   Double
+}
+
+
 #[derive(Debug, Clone)]
 pub enum ExprSeg {
     Operation(InstrInfo),
@@ -38,7 +85,9 @@ pub enum ExprSeg {
     Global(usize),
     Func(usize),
     BrTable(BrTableConst),
-    Instr(Vec<ExprSeg>)
+    Instr(Vec<ExprSeg>),
+    // TODO: Parse for idioms
+    Idiom(WasmIdiom)
 }
 
 impl ExprSeg {
@@ -92,7 +141,7 @@ impl ExprSeg {
 
 #[derive(Debug, Clone)]
 pub struct WasmExpr{
-    pub raw_expr_string: Vec<ExprSeg>
+    pub expr_string: Vec<ExprSeg>
 }
 
 #[derive(Clone, Copy)]
@@ -112,15 +161,96 @@ impl WasmExpr {
     pub fn new_box() -> Box<Self> {
         Box::new(
             Self {
-                raw_expr_string: vec![]
+                expr_string: vec![]
             }
         )
     }
+
+    fn parse_error() -> Error {
+        Error::new(
+            ErrorKind::InvalidData, 
+            "WasmExpr::parse_string: Error while parsing, likely data was misordered"
+        )
+    }
+    
+    // This really needs to be cleaned up
+    pub fn parse_string(&self) -> Result<WasmExpr, Error>{
+        let mut scope: Vec<Box<WasmExpr>> = vec![];
+        let mut last_scope = WasmExpr::new_box();
+        let mut expr_box = WasmExpr::new_box();
+        let mut level: i32 = 0;
+        let mut control_flow: Vec<InstrInfo> = Vec::new();
+        let mut iter = self.expr_string.iter();
+        while let Some(seg) = iter.next() {
+            let info = match seg {
+                ExprSeg::Operation(info) => info,
+                _ => {
+                    return Err(Error::new(ErrorKind::InvalidData, 
+                        "WasmExpr::parse_string: Expected instruction, didn't find one"));
+                }
+            };
+
+            let expr = &mut expr_box.expr_string;
+            let mut instr_layout = vec![ExprSeg::Operation(*info)];
+            let special_case = get_edge_case(*info);
+            
+            if special_case == SpecialInstr::BrTable {
+                // Likely to crash, oh well
+                let br_table = iter.next().unwrap();
+                instr_layout.push(br_table.clone());
+                expr.push(ExprSeg::Instr(instr_layout));
+                continue;
+            }
+
+            if special_case == SpecialInstr::CallIndirect {
+                instr_layout.push(iter.next().unwrap().clone());
+                instr_layout.push(iter.next().unwrap().clone());
+                expr.push(ExprSeg::Instr(instr_layout));
+                continue;
+            }
+            
+            for constant in info.constants {
+                instr_layout.push(iter.next().unwrap().clone());
+            }
+
+
+            // Control flow is special when it comes to being an "instruction"
+            if special_case == SpecialInstr::BeginBlock {
+                control_flow.push(*info);
+                level += 1;
+                // Push the scope
+                scope.push(last_scope);
+                last_scope = expr_box;
+                // Create a new scope
+                expr_box = WasmExpr::new_box();
+                continue;
+            }
+
+            if special_case == SpecialInstr::EndBlock {
+                // TODO: This is dirty, change later
+                expr.push(ExprSeg::Operation(*info));
+                level -= 1;
+                if level < 0 {
+                    break;
+                }
+                // pop the scope
+                let control_flow_context = control_flow.pop().unwrap();
+                last_scope.expr_string.push(ExprSeg::ControlFlow(control_flow_context, expr_box, *info));
+                expr_box = last_scope;
+                last_scope = scope.pop().unwrap();
+                continue;
+            }
+            expr.push(ExprSeg::Instr(instr_layout));
+        }
+
+        Ok(*expr_box)
+    } 
+
     pub fn emit_block_wat(&self, state: EmitterState) -> (usize, String) {
         let mut wat = "".to_string();
         let mut emit_until = 0;
 
-        for (i, seg) in self.raw_expr_string.iter().skip(state.start_segment).enumerate() {
+        for (i, seg) in self.expr_string.iter().skip(state.start_segment).enumerate() {
             match seg {
                 ExprSeg::Operation(info) => {
 
@@ -165,13 +295,13 @@ impl WasmExpr {
                 emit_until -= 1;
             } 
         }
-        (self.raw_expr_string.len() - 1, wat)
+        (self.expr_string.len() - 1, wat)
     }
     
     pub fn emit_expression_wat(&self) -> String {
         let mut wat = "".to_string();
         let mut i = 0;
-        while i < self.raw_expr_string.len() - 1 {
+        while i < self.expr_string.len() - 1 {
             wat += "(";
             let new_emit: String;
             (i, new_emit) = self.emit_block_wat(EmitterState {
@@ -195,6 +325,17 @@ impl Display for WasmExpr {
         f.write_str(&self.emit_expression_wat().as_str())
     }
 }
+
+fn get_op_seg(name: &str) -> ExprSeg {
+    ExprSeg::Operation(get_instr(name).unwrap())
+}
+
+fn new_expr(expr_string: Vec<ExprSeg>) -> WasmExpr {
+    // TODO: Parse String into instrs
+    WasmExpr { expr_string }
+}
+
+
 
 pub fn type_values(t: Prim) -> (i32, String) {
     match t {
@@ -568,7 +709,7 @@ pub fn calc_dyn_size(mut i: i64) -> usize {
 
 pub fn calculate_body_len(expr: &WasmExpr) -> usize {
     let mut total = 0;
-    for seg in expr.raw_expr_string.clone() {
+    for seg in expr.expr_string.clone() {
         total += match seg {
             ExprSeg::Operation(_) => 1,
             ExprSeg::Int(i) => calc_dyn_size(i),

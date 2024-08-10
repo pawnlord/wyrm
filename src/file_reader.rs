@@ -120,7 +120,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         let mut control_flow: Vec<InstrInfo> = Vec::new();
         while let Ok(byte) = self.read_sized::<u8>(0) {
             let info = INSTRS[byte as usize];
-            let expr = &mut expr_box.raw_expr_string;
+            let expr = &mut expr_box.expr_string;
             let mut instr_layout = vec![ExprSeg::Operation(info)];
             let special_case = get_edge_case(info);
             
@@ -206,7 +206,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                 }
                 // pop the scope
                 let control_flow_context = control_flow.pop().unwrap();
-                last_scope.raw_expr_string.push(ExprSeg::ControlFlow(control_flow_context, expr_box, info));
+                last_scope.expr_string.push(ExprSeg::ControlFlow(control_flow_context, expr_box, info));
                 expr_box = last_scope;
                 last_scope = scope.pop().unwrap();
                 continue;
@@ -380,7 +380,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             ]
         }).collect();
 
-        WasmExpr {raw_expr_string: expr}
+        WasmExpr {expr_string: expr}
     }
 
     fn read_elem(&mut self) -> Result<WasmElem, Error> {
