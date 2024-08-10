@@ -1,6 +1,8 @@
 use std::fs::File;
 
 
+use wasm_model::WasmIdiomPattern;
+
 use crate::instr_table::INSTRS;
 use crate::wat_emitter::emit_wat;
 
@@ -23,6 +25,9 @@ fn main() {
         File::open(args[1].as_str()).unwrap()
 
     };
+
+    WasmIdiomPattern::double();
+
     let wasm_file = file_reader::wasm_deserialize(file).unwrap();
     println!("{:}", emit_wat(&wasm_file));
 }

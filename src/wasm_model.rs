@@ -1,7 +1,7 @@
 use core::fmt;
 use std::{borrow::Borrow, fmt::{Debug, Display, Formatter}, io::{Error, ErrorKind}, ops::Deref};
 
-use crate::instr_table::*;
+use crate::{instr_table::*, usdm::UsdmFrontend};
 
 
 
@@ -44,15 +44,17 @@ pub enum IdiomGrammar
 
 #[derive(Debug, Clone)]
 pub struct WasmIdiomPattern {
-    pub pattern: Vec<IdiomGrammar>
+    pub pattern: Vec<IdiomGrammar>,
+    pub idiom: WasmIdiom
 }
 
 impl WasmIdiomPattern {
 
-    fn independent_expr(expr: WasmExpr) -> Self {
+    fn independent_expr(expr: WasmExpr, idiom: WasmIdiom) -> Self {
         let expr = expr.parse_string().expect("Error parsing Idiom pattern");
         Self {
-            pattern: vec![IdiomGrammar::StrictExpr(expr)]
+            pattern: vec![IdiomGrammar::StrictExpr(expr)],
+            idiom
         }
     }
 
@@ -60,8 +62,10 @@ impl WasmIdiomPattern {
     pub fn double() -> Self {
         Self::independent_expr(
             new_expr(vec![
-                get_op_seg("shl"), ExprSeg::Int(1)
-            ])
+                get_op_seg("i32.const"), ExprSeg::Int(1),
+                get_op_seg("i32.shl")
+            ]), 
+            WasmIdiom::Double
         )
     }
 }
@@ -140,7 +144,7 @@ impl ExprSeg {
 }
 
 #[derive(Debug, Clone)]
-pub struct WasmExpr{
+pub struct WasmExpr {
     pub expr_string: Vec<ExprSeg>
 }
 
@@ -209,7 +213,7 @@ impl WasmExpr {
                 continue;
             }
             
-            for constant in info.constants {
+            for _ in info.constants {
                 instr_layout.push(iter.next().unwrap().clone());
             }
 
@@ -335,6 +339,15 @@ fn new_expr(expr_string: Vec<ExprSeg>) -> WasmExpr {
     WasmExpr { expr_string }
 }
 
+impl From<Vec<ExprSeg>> for WasmExpr {
+    fn from(expr_string: Vec<ExprSeg>) -> Self { 
+        Self {
+            expr_string
+        }
+    }
+}
+
+impl UsdmFrontend for WasmExpr {}
 
 
 pub fn type_values(t: Prim) -> (i32, String) {
