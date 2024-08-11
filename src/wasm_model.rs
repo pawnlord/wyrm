@@ -1,7 +1,7 @@
 use core::fmt;
-use std::{borrow::Borrow, fmt::{Debug, Display, Formatter}, io::{Error, ErrorKind}, ops::Deref};
+use std::{borrow::Borrow, fmt::{Debug, Display, Formatter}, io::{Error, ErrorKind}, ops::Deref, slice::Iter};
 
-use crate::{instr_table::*, usdm::UsdmFrontend};
+use crate::{instr_table::*, usdm::{UsdmFrontend, UsdmSegment}};
 
 
 
@@ -141,6 +141,23 @@ impl ExprSeg {
         }
         wat
     }
+}
+
+impl UsdmSegment for ExprSeg {
+    type Type = Prim;
+    
+    fn get_type(&self) -> Self::Type {
+        match self {
+            Self::Int(_) => Prim::I64,
+            Self::Float32(_) => Prim::F32,
+            Self::Float64(_) => Prim::F64,
+            Self::Local(_)=> Prim::Local,
+            Self::Global(_)=> Prim::Global,
+            Self::Func(_)=> Prim::Func,
+            _ => Prim::Void
+        }    
+    }
+
 }
 
 #[derive(Debug, Clone)]
@@ -350,6 +367,10 @@ impl From<Vec<ExprSeg>> for WasmExpr {
 impl UsdmFrontend for WasmExpr {
     type Type = Prim;
     type Segment = ExprSeg;
+    type SegmentIterator<'a> = Iter<'a, ExprSeg>;
+    fn iter<'a>(&'a self) -> Self::SegmentIterator<'a> {
+        self.expr_string.iter()
+    }
 }
 
 

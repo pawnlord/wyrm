@@ -6,25 +6,34 @@
 * "registers"
 */
 
+pub trait UsdmSegment: Clone {
+    type Type;
+    
+    fn get_type(&self) -> Self::Type;
+}
 
+pub trait UsdmFrontend : Clone {
+    type Type;
+    type Segment: UsdmSegment<Type = Self::Type>;
+    type SegmentIterator<'a> : Iterator<Item = &'a Self::Segment> where Self : 'a;
 
-
-
-pub trait UsdmFrontend {
-   type Type;
-   type Segment;
+    fn iter<'a>(&'a self) -> Self::SegmentIterator<'a>;
 }
 
 
 
 pub struct UsdmVariable<T: UsdmFrontend> {
-   pub _type: T::Type,
+    pub _type: T::Type,
 }
 
 // This state is separate from any underlying machine:
 // It is the current state of the stack, as found by analysis.
 pub struct UsdmState<T: UsdmFrontend> {
-   pub stack: Vec<UsdmVariable<T>>
+    pub stack: Vec<UsdmVariable<T>>
+}
+
+pub struct UsdmOptions {
+
 }
 
 // T represents the underlying information of the USDM, e.g. the instructions
@@ -37,6 +46,26 @@ pub struct UsdmState<T: UsdmFrontend> {
 //   of a and b, that's an implementation detail: we just want to know if there's
 //   an add instruction interacting with 2 variables
 pub struct Usdm<T: UsdmFrontend> {
-   expr_string: Vec<T::Segment>,
-   timeline: Vec<UsdmState<T>>   
-} 
+    expr_string: T,
+    timeline: Vec<UsdmState<T>>,
+    options: UsdmOptions,
+    final_state: UsdmState<T>
+}
+
+impl<T: UsdmFrontend> Usdm<T> {
+    pub fn new(frontend: T) -> Self {
+        Self {
+            expr_string: frontend,
+            timeline: Vec::new(),
+            options: UsdmOptions {},
+            final_state: UsdmState { stack: Vec::new() }
+        }
+    }
+
+    // The main analysis function
+    pub fn analyze(&mut self) {
+        for seg in self.expr_string.clone().iter() {
+            
+        }
+    }
+}
