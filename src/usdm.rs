@@ -11,26 +11,20 @@
 
 
 pub trait UsdmFrontend {
-
+   type Type;
+   type Segment;
 }
 
 
-// A variable representation of a type.  This is not checking
-// correctness: it is checking soundeness.
-//   e.g., we know we are calling a function with 2 references as parameters,
-//     but the frontend has no idea what those references are: we need to be able
-//     to add reference types to the USDM
-pub struct UsdmType {
-   _type: usize
+
+pub struct UsdmVariable<T: UsdmFrontend> {
+   pub _type: T::Type,
 }
 
 // This state is separate from any underlying machine:
 // It is the current state of the stack, as found by analysis.
-pub struct UsdmState {
-   
-}
-
-pub struct UsdmSegment<T: UsdmFrontend> {
+pub struct UsdmState<T: UsdmFrontend> {
+   pub stack: Vec<UsdmVariable<T>>
 }
 
 // T represents the underlying information of the USDM, e.g. the instructions
@@ -42,7 +36,7 @@ pub struct UsdmSegment<T: UsdmFrontend> {
 //   instructions represents an `(add a b)` command, we don't want to know the types
 //   of a and b, that's an implementation detail: we just want to know if there's
 //   an add instruction interacting with 2 variables
-pub struct Usdm<T> {
-   expr_string: Vec<T>
-
+pub struct Usdm<T: UsdmFrontend> {
+   expr_string: Vec<T::Segment>,
+   timeline: Vec<UsdmState<T>>   
 } 

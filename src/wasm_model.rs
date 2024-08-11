@@ -347,7 +347,10 @@ impl From<Vec<ExprSeg>> for WasmExpr {
     }
 }
 
-impl UsdmFrontend for WasmExpr {}
+impl UsdmFrontend for WasmExpr {
+    type Type = Prim;
+    type Segment = ExprSeg;
+}
 
 
 pub fn type_values(t: Prim) -> (i32, String) {
