@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     instr_table::*,
-    usdm::{StackOperation, UsdmFrontend, UsdmSegment},
+    usdm::{SpecialStackOp, StackOperation, UsdmFrontend, UsdmSegment},
 };
 
 pub trait TypeTrait {}
@@ -148,26 +148,21 @@ impl ExprSeg {
 impl UsdmSegment for ExprSeg {
     type Type = Prim;
 
-    fn get_stack_operation(&self) -> StackOperation<Self::Type> {
+    fn get_stack_operation(&self) -> StackOperation<Self> {
         match self {
-            Self::Operation(info) => StackOperation {
-                in_types: info.in_types.clone().to_vec(),
-                out_types: info.out_types.clone().to_vec(),
-            }, 
+            Self::Operation(info) => info.get_stack_operation(), 
             Self::Instr(segs) => {
                 if segs.len() == 0 {
-                    return StackOperation {in_types: vec![], out_types: vec![]};
+                    return StackOperation::new();
                 }
 
                 let Self::Operation(info) = segs[0] else {
-                    return StackOperation {in_types: vec![], out_types: vec![]};
+                    return StackOperation::new();
                 };
-                StackOperation {
-                    in_types: info.in_types.clone().to_vec(),
-                    out_types: info.out_types.clone().to_vec(),
-                }
+
+                info.get_stack_operation()
             }
-            _ => StackOperation {in_types: vec![], out_types: vec![]},
+            _ => StackOperation::new(),
         }
     }
 }
@@ -682,6 +677,17 @@ pub struct InstrInfo {
     pub out_types: &'static [Prim],
     pub constants: &'static [Prim],
     pub takes_align: bool,
+}
+
+impl InstrInfo {
+    pub fn get_stack_operation(&self) -> StackOperation<ExprSeg> {
+        
+        StackOperation {
+            in_types: self.in_types.clone().to_vec(),
+            out_types: self.out_types.clone().to_vec(),
+            special_op: SpecialStackOp::<ExprSeg>::None
+        }
+    }
 }
 
 impl Debug for InstrInfo {
