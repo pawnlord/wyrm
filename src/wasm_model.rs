@@ -681,11 +681,32 @@ pub struct InstrInfo {
 
 impl InstrInfo {
     pub fn get_stack_operation(&self) -> StackOperation<ExprSeg> {
+        let created_type =  if self.instr == get_instr("i32.const").unwrap().instr {
+            Prim::I32
+        } else if self.instr == get_instr("i64.const").unwrap().instr {
+            Prim::I64
+        } else if self.instr == get_instr("f32.const").unwrap().instr {
+            Prim::F32
+        } else if self.instr == get_instr("f64.const").unwrap().instr {
+            Prim::F64
+        } else if self.instr == get_instr("ref.func").unwrap().instr {
+            Prim::Func
+        } else {
+            Prim::Void
+        };
         
-        StackOperation {
-            in_types: self.in_types.clone().to_vec(),
-            out_types: self.out_types.clone().to_vec(),
-            special_op: SpecialStackOp::<ExprSeg>::None
+        if created_type == Prim::Void {
+            StackOperation {
+                in_types: self.in_types.clone().to_vec(),
+                out_types: self.out_types.clone().to_vec(),
+                special_op: SpecialStackOp::<ExprSeg>::None
+            }    
+        } else {
+            StackOperation {
+                in_types: self.in_types.clone().to_vec(),
+                out_types: self.out_types.clone().to_vec(),
+                special_op: SpecialStackOp::<ExprSeg>::CreateVar(created_type)
+            }        
         }
     }
 }

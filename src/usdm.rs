@@ -10,18 +10,22 @@ use crate::instr_table::get_instr;
 
 pub enum SpecialStackOp<T: UsdmSegment> {
     None,
-    CreateVar(T::Type)
+    CreateVar(T::Type),
 }
 
 pub struct StackOperation<T: UsdmSegment> {
     pub in_types: Vec<T::Type>,
     pub out_types: Vec<T::Type>,
-    pub special_op: SpecialStackOp<T>
+    pub special_op: SpecialStackOp<T>,
 }
 
 impl<T: UsdmSegment> StackOperation<T> {
     pub fn new() -> Self {
-        Self {in_types: vec![], out_types: vec![], special_op: SpecialStackOp::<T>::None}
+        Self {
+            in_types: vec![],
+            out_types: vec![],
+            special_op: SpecialStackOp::<T>::None,
+        }
     }
 }
 
@@ -32,7 +36,7 @@ pub trait UsdmSegment: Clone {
 }
 
 pub trait UsdmFrontend: Clone {
-    type Type;
+    type Type: Clone;
     type Segment: UsdmSegment<Type = Self::Type>;
     type SegmentIterator<'a>: Iterator<Item = &'a Self::Segment>
     where
@@ -109,9 +113,19 @@ impl<T: UsdmFrontend> Usdm<T> {
                     "Too many inputs for current stack size: Check if this is actually WASM code",
                 ));
             }
-
-            for var_out in stack_op.out_types {
-                self.final_state.stack.push(UsdmExpression::empty(var_out));
+            match stack_op.special_op {
+                SpecialStackOp::None => {
+                    for (i, var_out) in stack_op.out_types.iter().enumerate() {
+                        self.final_state.stack.push(UsdmExpression::UsdmExpr {
+                            operation: seg.clone(),
+                            out_num: i,
+                            arguments: vars.clone(),
+                        });
+                    }
+                }
+                SpecialStackOp::CreateVar(_type) => {
+                    self.final_state.stack.push(UsdmExpression::empty(_type));
+                }
             }
         }
     }
