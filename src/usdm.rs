@@ -6,10 +6,17 @@
 * "registers"
 */
 
+use crate::instr_table::get_instr;
+
+pub struct StackOperation<T> {
+    pub in_types: Vec<T>,
+    pub out_types: Vec<T>,
+}
+
 pub trait UsdmSegment: Clone {
     type Type;
-    
-    fn get_type(&self) -> Self::Type;
+
+    fn get_stack_operation(&self) -> StackOperation<Self::Type>;
 }
 
 pub trait UsdmFrontend : Clone {
@@ -29,7 +36,8 @@ pub struct UsdmVariable<T: UsdmFrontend> {
 // This state is separate from any underlying machine:
 // It is the current state of the stack, as found by analysis.
 pub struct UsdmState<T: UsdmFrontend> {
-    pub stack: Vec<UsdmVariable<T>>
+    pub stack: Vec<UsdmVariable<T>>,
+    pub stack_capacity: usize
 }
 
 pub struct UsdmOptions {
@@ -58,14 +66,21 @@ impl<T: UsdmFrontend> Usdm<T> {
             expr_string: frontend,
             timeline: Vec::new(),
             options: UsdmOptions {},
-            final_state: UsdmState { stack: Vec::new() }
+            final_state: UsdmState { stack: Vec::new(), stack_capacity: 0 }
         }
     }
 
     // The main analysis function
     pub fn analyze(&mut self) {
         for seg in self.expr_string.clone().iter() {
-            
+            let stack_op = seg.get_stack_operation();
+            let stack_growth = stack_op.out_types.len() - stack_op.in_types.len();
+            for var_in in stack_op.in_types {
+            }
+
+            for var_out in stack_op.out_types {
+
+            }         
         }
     }
 }

@@ -1,14 +1,21 @@
 use core::fmt;
-use std::{borrow::Borrow, fmt::{Debug, Display, Formatter}, io::{Error, ErrorKind}, ops::Deref, slice::Iter};
+use std::{
+    borrow::Borrow,
+    fmt::{Debug, Display, Formatter},
+    io::{Error, ErrorKind},
+    ops::Deref,
+    slice::Iter,
+};
 
-use crate::{instr_table::*, usdm::{UsdmFrontend, UsdmSegment}};
-
-
+use crate::{
+    instr_table::*,
+    usdm::{StackOperation, UsdmFrontend, UsdmSegment},
+};
 
 pub trait TypeTrait {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Prim{
+pub enum Prim {
     Void,
     I32,
     I64,
@@ -17,44 +24,40 @@ pub enum Prim{
     Local,
     Global,
     Generic,
-    Func
+    Func,
 }
 
 #[derive(Debug, Clone)]
 pub struct BrTableConst {
-    pub break_depths: Vec<usize>, 
+    pub break_depths: Vec<usize>,
     pub default: usize,
 }
-
 
 /*
  * An IdiomPattern is made from the IdiomGrammar, and when found
  * creates a WasmIdiom
 */
 #[derive(Debug, Clone)]
-pub enum IdiomGrammar
-{
-   StrictExpr(WasmExpr),
-   // Single-segment wildcard
-   InstrWildcard,
-   // Multi-segment wildcard
-   ExprWildcard,
-   
+pub enum IdiomGrammar {
+    StrictExpr(WasmExpr),
+    // Single-segment wildcard
+    InstrWildcard,
+    // Multi-segment wildcard
+    ExprWildcard,
 }
 
 #[derive(Debug, Clone)]
 pub struct WasmIdiomPattern {
     pub pattern: Vec<IdiomGrammar>,
-    pub idiom: WasmIdiom
+    pub idiom: WasmIdiom,
 }
 
 impl WasmIdiomPattern {
-
     fn independent_expr(expr: WasmExpr, idiom: WasmIdiom) -> Self {
         let expr = expr.parse_string().expect("Error parsing Idiom pattern");
         Self {
             pattern: vec![IdiomGrammar::StrictExpr(expr)],
-            idiom
+            idiom,
         }
     }
 
@@ -62,20 +65,19 @@ impl WasmIdiomPattern {
     pub fn double() -> Self {
         Self::independent_expr(
             new_expr(vec![
-                get_op_seg("i32.const"), ExprSeg::Int(1),
-                get_op_seg("i32.shl")
-            ]), 
-            WasmIdiom::Double
+                get_op_seg("i32.const"),
+                ExprSeg::Int(1),
+                get_op_seg("i32.shl"),
+            ]),
+            WasmIdiom::Double,
         )
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub enum WasmIdiom {
-   Double
+    Double,
 }
-
 
 #[derive(Debug, Clone)]
 pub enum ExprSeg {
@@ -91,53 +93,53 @@ pub enum ExprSeg {
     BrTable(BrTableConst),
     Instr(Vec<ExprSeg>),
     // TODO: Parse for idioms
-    Idiom(WasmIdiom)
+    Idiom(WasmIdiom),
 }
 
 impl ExprSeg {
-    pub fn emit_wat(&self, mut wat: String, state: EmitterState) -> String{
+    pub fn emit_wat(&self, mut wat: String, state: EmitterState) -> String {
         match self {
             ExprSeg::Operation(info) => {
                 wat += format!("{:}", info.name).as_str();
-            },
+            }
             ExprSeg::Int(i) => {
                 wat += format!("{:}", i).as_str();
-            },
+            }
             ExprSeg::Float32(f) => {
                 wat += format!("{:}", f).as_str();
-            },
+            }
             ExprSeg::Float64(f) => {
                 wat += format!("{:}", f).as_str();
-            },
+            }
             ExprSeg::Global(idx) => {
                 wat += format!("$global{:}", idx).as_str();
-            },
+            }
             ExprSeg::Local(idx) => {
                 wat += format!("$var{:}", idx).as_str();
-            },
+            }
             ExprSeg::Func(idx) => {
                 wat += format!("$func{:}", idx).as_str();
-            },
-            ExprSeg::BrTable(table_const) => {},
+            }
+            ExprSeg::BrTable(table_const) => {}
             ExprSeg::ControlFlow(info, expr, end_info) => {
                 // Add extra characters for indentation
                 wat += &format!("{:} $label{}\n  ", info.name, state.label);
-                
+
                 let (_, new_emit) = expr.emit_block_wat(EmitterState {
                     start_segment: 0,
-                    label: state.label + 1
+                    label: state.label + 1,
                 });
 
                 wat += new_emit.replace("\n", "\n  ").as_str();
                 wat += format!("\n{:} $label{}\n", end_info.name, state.label).as_str();
-            },
+            }
             ExprSeg::Instr(instr_expr) => {
                 for seg in instr_expr {
                     wat = seg.emit_wat(wat, state) + " ";
                 }
                 wat = wat + "\n";
             }
-            _ => {},
+            _ => {}
         }
         wat
     }
@@ -145,24 +147,34 @@ impl ExprSeg {
 
 impl UsdmSegment for ExprSeg {
     type Type = Prim;
-    
-    fn get_type(&self) -> Self::Type {
-        match self {
-            Self::Int(_) => Prim::I64,
-            Self::Float32(_) => Prim::F32,
-            Self::Float64(_) => Prim::F64,
-            Self::Local(_)=> Prim::Local,
-            Self::Global(_)=> Prim::Global,
-            Self::Func(_)=> Prim::Func,
-            _ => Prim::Void
-        }    
-    }
 
+    fn get_stack_operation(&self) -> StackOperation<Self::Type> {
+        match self {
+            Self::Operation(info) => StackOperation {
+                in_types: info.in_types.clone().to_vec(),
+                out_types: info.out_types.clone().to_vec(),
+            }, 
+            Self::Instr(segs) => {
+                if segs.len() == 0 {
+                    return StackOperation {in_types: vec![], out_types: vec![]};
+                }
+
+                let Self::Operation(info) = segs[0] else {
+                    return StackOperation {in_types: vec![], out_types: vec![]};
+                };
+                StackOperation {
+                    in_types: info.in_types.clone().to_vec(),
+                    out_types: info.out_types.clone().to_vec(),
+                }
+            }
+            _ => StackOperation {in_types: vec![], out_types: vec![]},
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct WasmExpr {
-    pub expr_string: Vec<ExprSeg>
+    pub expr_string: Vec<ExprSeg>,
 }
 
 #[derive(Clone, Copy)]
@@ -171,31 +183,29 @@ pub struct EmitterState {
     label: usize,
 }
 
-pub fn blank_emitter() -> EmitterState{
+pub fn blank_emitter() -> EmitterState {
     return EmitterState {
         start_segment: 0,
-        label: 0
-    }
+        label: 0,
+    };
 }
 
 impl WasmExpr {
     pub fn new_box() -> Box<Self> {
-        Box::new(
-            Self {
-                expr_string: vec![]
-            }
-        )
+        Box::new(Self {
+            expr_string: vec![],
+        })
     }
 
     fn parse_error() -> Error {
         Error::new(
-            ErrorKind::InvalidData, 
-            "WasmExpr::parse_string: Error while parsing, likely data was misordered"
+            ErrorKind::InvalidData,
+            "WasmExpr::parse_string: Error while parsing, likely data was misordered",
         )
     }
-    
+
     // This really needs to be cleaned up
-    pub fn parse_string(&self) -> Result<WasmExpr, Error>{
+    pub fn parse_string(&self) -> Result<WasmExpr, Error> {
         let mut scope: Vec<Box<WasmExpr>> = vec![];
         let mut last_scope = WasmExpr::new_box();
         let mut expr_box = WasmExpr::new_box();
@@ -206,15 +216,17 @@ impl WasmExpr {
             let info = match seg {
                 ExprSeg::Operation(info) => info,
                 _ => {
-                    return Err(Error::new(ErrorKind::InvalidData, 
-                        "WasmExpr::parse_string: Expected instruction, didn't find one"));
+                    return Err(Error::new(
+                        ErrorKind::InvalidData,
+                        "WasmExpr::parse_string: Expected instruction, didn't find one",
+                    ));
                 }
             };
 
             let expr = &mut expr_box.expr_string;
             let mut instr_layout = vec![ExprSeg::Operation(*info)];
             let special_case = get_edge_case(*info);
-            
+
             if special_case == SpecialInstr::BrTable {
                 // Likely to crash, oh well
                 let br_table = iter.next().unwrap();
@@ -229,11 +241,10 @@ impl WasmExpr {
                 expr.push(ExprSeg::Instr(instr_layout));
                 continue;
             }
-            
+
             for _ in info.constants {
                 instr_layout.push(iter.next().unwrap().clone());
             }
-
 
             // Control flow is special when it comes to being an "instruction"
             if special_case == SpecialInstr::BeginBlock {
@@ -256,7 +267,11 @@ impl WasmExpr {
                 }
                 // pop the scope
                 let control_flow_context = control_flow.pop().unwrap();
-                last_scope.expr_string.push(ExprSeg::ControlFlow(control_flow_context, expr_box, *info));
+                last_scope.expr_string.push(ExprSeg::ControlFlow(
+                    control_flow_context,
+                    expr_box,
+                    *info,
+                ));
                 expr_box = last_scope;
                 last_scope = scope.pop().unwrap();
                 continue;
@@ -265,22 +280,26 @@ impl WasmExpr {
         }
 
         Ok(*expr_box)
-    } 
+    }
 
     pub fn emit_block_wat(&self, state: EmitterState) -> (usize, String) {
         let mut wat = "".to_string();
         let mut emit_until = 0;
 
-        for (i, seg) in self.expr_string.iter().skip(state.start_segment).enumerate() {
+        for (i, seg) in self
+            .expr_string
+            .iter()
+            .skip(state.start_segment)
+            .enumerate()
+        {
             match seg {
                 ExprSeg::Operation(info) => {
-
                     let special_case = get_edge_case(*info);
-                    
+
                     if special_case == SpecialInstr::EndBlock {
                         return (state.start_segment + i, wat);
                     }
-    
+
                     wat += format!("{:}", info.name).as_str();
 
                     // Figure out how many expression segments come after this one
@@ -293,19 +312,19 @@ impl WasmExpr {
                     } else {
                         0
                     }
-                },
+                }
                 ExprSeg::ControlFlow(info, expr, end_info) => {
                     // Add extra characters for indentation
                     wat += &format!("{} $label{}\n  ", info.name, state.label);
-                    
+
                     let (_, new_emit) = expr.emit_block_wat(EmitterState {
                         start_segment: 0,
-                        label: state.label + 1
+                        label: state.label + 1,
                     });
 
                     wat += new_emit.replace("\n", "\n  ").trim_end();
                     wat += format!("\n{:} $label{}\n", end_info.name, state.label).as_str();
-                },
+                }
                 _ => {
                     wat = seg.emit_wat(wat, state);
                 }
@@ -314,11 +333,11 @@ impl WasmExpr {
             if emit_until > 0 {
                 wat += " ";
                 emit_until -= 1;
-            } 
+            }
         }
         (self.expr_string.len() - 1, wat)
     }
-    
+
     pub fn emit_expression_wat(&self) -> String {
         let mut wat = "".to_string();
         let mut i = 0;
@@ -338,7 +357,6 @@ impl WasmExpr {
 
         wat
     }
-
 }
 
 impl Display for WasmExpr {
@@ -357,10 +375,8 @@ fn new_expr(expr_string: Vec<ExprSeg>) -> WasmExpr {
 }
 
 impl From<Vec<ExprSeg>> for WasmExpr {
-    fn from(expr_string: Vec<ExprSeg>) -> Self { 
-        Self {
-            expr_string
-        }
+    fn from(expr_string: Vec<ExprSeg>) -> Self {
+        Self { expr_string }
     }
 }
 
@@ -373,7 +389,6 @@ impl UsdmFrontend for WasmExpr {
     }
 }
 
-
 pub fn type_values(t: Prim) -> (i32, String) {
     match t {
         Prim::Void => (0, "void".to_string()),
@@ -385,10 +400,9 @@ pub fn type_values(t: Prim) -> (i32, String) {
         Prim::Global => (6, "global".to_string()),
         Prim::Func => (7, "funcidx".to_string()),
         Prim::Generic => (8, "generic".to_string()),
-        _ => (-1, "any".to_string())
+        _ => (-1, "any".to_string()),
     }
-} 
-
+}
 
 #[derive(Debug)]
 pub struct WasmHeader {
@@ -436,7 +450,7 @@ pub struct WasmFunctionType {
 pub struct WasmImportSection {
     pub section_size: usize,
     pub num_imports: usize,
-    pub imports: Vec<WasmImportHeader>
+    pub imports: Vec<WasmImportHeader>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -444,7 +458,7 @@ pub enum WasmImportType {
     Func,
     Table,
     Mem,
-    Global
+    Global,
 }
 
 pub fn num_to_import_type(num: u8) -> WasmImportType {
@@ -453,7 +467,7 @@ pub fn num_to_import_type(num: u8) -> WasmImportType {
         0x01 => WasmImportType::Table,
         0x02 => WasmImportType::Mem,
         0x03 => WasmImportType::Global,
-        _ => WasmImportType::Global
+        _ => WasmImportType::Global,
     }
 }
 
@@ -474,12 +488,11 @@ pub struct WasmImportHeader {
 pub struct WasmFunctionSection {
     pub section_size: usize,
     pub num_functions: usize,
-    pub function_signature_indexes: Vec<u8>
+    pub function_signature_indexes: Vec<u8>,
 }
 
 #[derive(Debug)]
 pub struct WasmTableSection {
-    
     pub section_size: usize,
     pub num_tables: usize,
     pub tables: Vec<WasmTable>,
@@ -509,9 +522,8 @@ pub struct WasmMemoryStruct {
 pub struct WasmGlobal {
     pub wasm_type: WasmTypeAnnotation,
     pub mutability: u8,
-    pub expr: WasmExpr
+    pub expr: WasmExpr,
 }
-
 
 #[derive(Debug)]
 pub struct WasmGlobalSection {
@@ -524,26 +536,26 @@ pub struct WasmGlobalSection {
 pub struct WasmExportSection {
     pub section_size: usize,
     pub num_exports: usize,
-    pub exports: Vec<WasmExportHeader>
+    pub exports: Vec<WasmExportHeader>,
 }
 
 #[derive(Debug)]
 pub enum WasmRefType {
     FuncRef,
-    ExternRef
+    ExternRef,
 }
 
 pub fn byte_to_reftype(byte: u8) -> Result<WasmRefType, Error> {
     match byte {
         0x70 => Ok(WasmRefType::FuncRef),
         0x6F => Ok(WasmRefType::ExternRef),
-        
-        _ => {
-            Err(Error::new(ErrorKind::InvalidData, format!("Invalid RefType byte: {:?}", byte)))
-        }
+
+        _ => Err(Error::new(
+            ErrorKind::InvalidData,
+            format!("Invalid RefType byte: {:?}", byte),
+        )),
     }
 }
-
 
 // Section describing imports
 #[derive(Debug)]
@@ -555,47 +567,45 @@ pub struct WasmExportHeader {
     pub export_signature_index: u8,
 }
 
-
 #[derive(Debug)]
 pub struct AcvtiveStruct {
-    pub table: u32, 
-    pub offset_expr: WasmExpr
+    pub table: u32,
+    pub offset_expr: WasmExpr,
 }
 
 #[derive(Debug)]
 pub enum WasmElemMode {
     Passive,
     Active(AcvtiveStruct),
-    Declarative
+    Declarative,
 }
 
 #[derive(Debug)]
 pub struct WasmElem {
     pub _type: WasmRefType,
     pub init: WasmExpr,
-    pub mode: WasmElemMode
+    pub mode: WasmElemMode,
 }
 
 #[derive(Debug)]
 pub struct WasmElemSection {
     pub section_size: usize,
     pub num_elems: usize,
-    pub elems: Vec<WasmElem>
+    pub elems: Vec<WasmElem>,
 }
 
 #[derive(Debug)]
 pub struct WasmCodeSection {
     pub section_size: usize,
     pub num_functions: usize,
-    pub functions: Vec<WasmFunction>
+    pub functions: Vec<WasmFunction>,
 }
-
 
 #[derive(Debug)]
 pub struct WasmDataSection {
     pub section_size: usize,
     pub num_data_segs: usize,
-    pub data_segs: Vec<WasmDataSeg>
+    pub data_segs: Vec<WasmDataSeg>,
 }
 
 #[derive(Debug)]
@@ -608,19 +618,18 @@ pub struct WasmDataSegHeader {
 #[derive(Debug)]
 pub struct WasmDataSeg {
     pub header: WasmDataSegHeader,
-    pub data: Vec<u8>
+    pub data: Vec<u8>,
 }
-
 
 #[derive(Debug)]
 pub struct WasmDataCountSection {
     pub section_size: usize,
-    pub datacount: usize
+    pub datacount: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct WasmLocal{
-    pub _type: WasmTypeAnnotation
+pub struct WasmLocal {
+    pub _type: WasmTypeAnnotation,
 }
 
 pub struct WasmFunction {
@@ -633,17 +642,20 @@ pub struct WasmFunction {
 impl Debug for WasmFunction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("WasmFunction")
-        .field("size", &self.size)
-        .field("locals", &self.local_types.iter()
-            .map(|local_type| {
-                format!("[{:}; {:}]", local_type.0, local_type.1)}
-            ).collect::<Vec<String>>()
-            .join(", "))
-        .field("body", &self.body)
-        .finish()
+            .field("size", &self.size)
+            .field(
+                "locals",
+                &self
+                    .local_types
+                    .iter()
+                    .map(|local_type| format!("[{:}; {:}]", local_type.0, local_type.1))
+                    .collect::<Vec<String>>()
+                    .join(", "),
+            )
+            .field("body", &self.body)
+            .finish()
     }
 }
-
 
 #[derive(Debug)]
 pub struct WasmFile {
@@ -674,8 +686,9 @@ pub struct InstrInfo {
 
 impl Debug for InstrInfo {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-
-        let out_string: String = self.out_types.iter()
+        let out_string: String = self
+            .out_types
+            .iter()
             .map(|prim_type| format!("{:?}", prim_type))
             .collect::<Vec<String>>()
             .join(", ");
@@ -686,7 +699,9 @@ impl Debug for InstrInfo {
             format!(" -> {:}", out_string)
         };
 
-        let arg_string: String = self.in_types.iter()
+        let arg_string: String = self
+            .in_types
+            .iter()
             .map(|prim_type| format!("{:?}", prim_type))
             .collect::<Vec<String>>()
             .join(", ");
@@ -696,8 +711,10 @@ impl Debug for InstrInfo {
         } else {
             arg_string
         };
-        
-        let constant: String = self.constants.iter()
+
+        let constant: String = self
+            .constants
+            .iter()
             .map(|prim_type| format!("{:?}", prim_type))
             .collect::<Vec<String>>()
             .join(", ");
@@ -708,14 +725,18 @@ impl Debug for InstrInfo {
             constant
         };
 
-        write!(f, "{:#x}: {}{}({}){}" , self.instr, self.name, constant, arg, rettype)
+        write!(
+            f,
+            "{:#x}: {}{}({}){}",
+            self.instr, self.name, constant, arg, rettype
+        )
     }
 }
 
 #[derive(PartialEq, Eq)]
 pub enum SpecialInstr {
     None,
-    BrTable, 
+    BrTable,
     BeginBlock,
     EndBlock,
     CallIndirect,
@@ -726,8 +747,8 @@ pub fn get_edge_case(info: InstrInfo) -> SpecialInstr {
         0x0e => SpecialInstr::BrTable,
         0x02 | 0x03 | 0x04 => SpecialInstr::BeginBlock,
         0x0b => SpecialInstr::EndBlock,
-        0x11 => SpecialInstr::CallIndirect, 
-        _ => SpecialInstr::None
+        0x11 => SpecialInstr::CallIndirect,
+        _ => SpecialInstr::None,
     }
 }
 
@@ -752,16 +773,19 @@ pub fn calculate_body_len(expr: &WasmExpr) -> usize {
             ExprSeg::Int(i) => calc_dyn_size(i),
             ExprSeg::Float32(_) => 4,
             ExprSeg::Float64(_) => 8,
-            ExprSeg::BrTable(tab) => calc_dyn_size(tab.default as i64) 
-                + tab.break_depths.iter()
-                    .fold(0, |acc: usize, i| acc + calc_dyn_size(*i as i64)),
+            ExprSeg::BrTable(tab) => {
+                calc_dyn_size(tab.default as i64)
+                    + tab
+                        .break_depths
+                        .iter()
+                        .fold(0, |acc: usize, i| acc + calc_dyn_size(*i as i64))
+            }
             ExprSeg::ControlFlow(_, block, _) => calculate_body_len(block.as_ref()),
-            _ => 0
+            _ => 0,
         }
     }
     total
 }
-
 
 // pub fn build_expr(segments: Vec<ExprSeg>) -> WasmExpr {
 //     let mut expr = Vec::<u8>::new();
@@ -791,7 +815,6 @@ pub fn calculate_body_len(expr: &WasmExpr) -> usize {
 //     }
 //     WasmExpr{expr}
 // }
-
 
 // pub fn build_expr_func(segments: Vec<ExprSeg>) -> Vec<u8> {
 //     segments.iter().flat_map(|segment| {
@@ -826,6 +849,7 @@ impl WasmFile {
         &self.type_section.function_signatures[import.import_type as usize]
     }
     pub fn get_func_sig(&self, func: usize) -> &WasmFunctionType {
-        &self.type_section.function_signatures[self.function_section.function_signature_indexes[func] as usize]
+        &self.type_section.function_signatures
+            [self.function_section.function_signature_indexes[func] as usize]
     }
 }

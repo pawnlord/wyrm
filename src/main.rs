@@ -10,7 +10,6 @@ mod wasm_model;
 mod file_reader;
 mod instr_table;
 mod wat_emitter;
-mod pipeline;
 mod usdm;
 use std::env;
 
