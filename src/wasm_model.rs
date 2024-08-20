@@ -787,69 +787,13 @@ pub fn calculate_body_len(expr: &WasmExpr) -> usize {
     total
 }
 
-// pub fn build_expr(segments: Vec<ExprSeg>) -> WasmExpr {
-//     let mut expr = Vec::<u8>::new();
-//     for segment in segments {
-//         match segment {
-//             ExprSeg::Expr(e) => {
-//                 expr.append(&mut e.expr.clone())
-//             }
-//             ExprSeg::Instr(name) => {
-//                 if let Some(instr) = get_instr(name) {
-//                     expr.push(instr.instr);
-//                 }
-//             }
-//             ExprSeg::Num(mut n) => {
-//                 while n > 0 {
-//                     let low_byte = (n & 0x7f) | if n >> 7 == 0 {
-//                         0
-//                     } else {
-//                         0x80
-//                     };
-//                     expr.push(low_byte as u8);
-//                     n >>= 7;
-//                 }
-//             }
-//             _ => {}
-//         }
-//     }
-//     WasmExpr{expr}
-// }
-
-// pub fn build_expr_func(segments: Vec<ExprSeg>) -> Vec<u8> {
-//     segments.iter().flat_map(|segment| {
-//         match segment {
-//             ExprSeg::Expr(e) => {
-//                  e.expr.clone()
-//             }
-//             ExprSeg::Instr(name) => {
-//                 get_instr(name.to_string())
-//                     .map(|instr| vec![instr.instr])
-//                     .unwrap_or(vec![])
-//             }
-//             ExprSeg::Num(mut n) => {
-//                 let mut num_vec = Vec::<u8>::new();
-//                 while n > 0 {
-//                     let low_byte = (n & 0x7f) | if n >> 7 == 0 {
-//                         0
-//                     } else {
-//                         0x80
-//                     };
-//                     num_vec.push(low_byte as u8);
-//                     n >>= 7;
-//                 }
-//                 num_vec
-//             }
-//         }
-//     }).collect()
-// }
 
 impl WasmFile {
     pub fn get_import_sig(&self, import: &WasmImportHeader) -> &WasmFunctionType {
         &self.type_section.function_signatures[import.import_type as usize]
     }
     pub fn get_func_sig(&self, func: usize) -> &WasmFunctionType {
-        &self.type_section.function_signatures
-            [self.function_section.function_signature_indexes[func] as usize]
+        let func_sig_idx = self.function_section.function_signature_indexes[func] as usize;
+        &self.type_section.function_signatures[func_sig_idx]
     }
 }
