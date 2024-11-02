@@ -150,7 +150,7 @@ impl UsdmSegment for ExprSeg {
 
     fn get_stack_operation(&self) -> StackOperation<Self> {
         match self {
-            Self::Operation(info) => info.get_stack_operation(), 
+            Self::Operation(info) => info.get_stack_operation(),
             Self::Instr(segs) => {
                 if segs.len() == 0 {
                     return StackOperation::new();
@@ -681,7 +681,7 @@ pub struct InstrInfo {
 
 impl InstrInfo {
     pub fn get_stack_operation(&self) -> StackOperation<ExprSeg> {
-        let created_type =  if self.instr == get_instr("i32.const").unwrap().instr {
+        let created_type = if self.instr == get_instr("i32.const").unwrap().instr {
             Prim::I32
         } else if self.instr == get_instr("i64.const").unwrap().instr {
             Prim::I64
@@ -694,19 +694,19 @@ impl InstrInfo {
         } else {
             Prim::Void
         };
-        
+
         if created_type == Prim::Void {
             StackOperation {
                 in_types: self.in_types.clone().to_vec(),
                 out_types: self.out_types.clone().to_vec(),
-                special_op: SpecialStackOp::<ExprSeg>::None
-            }    
+                special_op: SpecialStackOp::<ExprSeg>::None,
+            }
         } else {
             StackOperation {
                 in_types: self.in_types.clone().to_vec(),
                 out_types: self.out_types.clone().to_vec(),
-                special_op: SpecialStackOp::<ExprSeg>::CreateVar(created_type)
-            }        
+                special_op: SpecialStackOp::<ExprSeg>::CreateVar(created_type),
+            }
         }
     }
 }
@@ -813,7 +813,6 @@ pub fn calculate_body_len(expr: &WasmExpr) -> usize {
     }
     total
 }
-
 
 impl WasmFile {
     pub fn get_import_sig(&self, import: &WasmImportHeader) -> &WasmFunctionType {

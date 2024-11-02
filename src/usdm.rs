@@ -113,6 +113,7 @@ impl<T: UsdmFrontend> Usdm<T> {
                     "Too many inputs for current stack size: Check if this is actually WASM code",
                 ));
             }
+            
             match stack_op.special_op {
                 SpecialStackOp::None => {
                     for (i, var_out) in stack_op.out_types.iter().enumerate() {

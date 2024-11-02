@@ -72,6 +72,7 @@ pub fn sig_to_wat(&self, f: &WasmFunctionType) -> (usize, String) {
     }
     (f.params.len(), wat)
 }
+
 pub fn export_to_wat(&self, export: &WasmExportHeader) -> String{
     // TODO: Need to find list of these export kinds
     if export.export_kind == 0 {

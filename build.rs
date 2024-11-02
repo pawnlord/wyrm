@@ -127,10 +127,21 @@ fn main() {
             instruction_list += instr_string.as_str();                
             
         }
-        
+
+        let mut symbols = "".to_string();        
+        for (i, instr) in instr_list {
+            let name = instr["name"].as_str().unwrap().to_string();
+            let opcode = instr["opcode"].as_u64().unwrap();
+            
+            let normalized_ident = name.replace(".", "_").replace("@", "_").to_uppercase();
+
+            let instr_string = "#[allow(dead_code)]\n".to_string() + format!(r#"const {}: u64 = {};"#, normalized_ident, opcode.to_string()).as_str() + "\n";
+            symbols += instr_string.as_str();
+            
+        }
         
         let _ = writer.write(format!("pub const INSTRS: [InstrInfo; 256] = [{}];
-        ", instruction_list).as_bytes());
+                                            {}", instruction_list, symbols).as_bytes());
 
     }
 }

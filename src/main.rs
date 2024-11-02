@@ -11,6 +11,8 @@ mod file_reader;
 mod instr_table;
 mod wat_emitter;
 mod usdm;
+mod wasm_parser;
+mod parser;
 use std::env;
 
 fn main() {
