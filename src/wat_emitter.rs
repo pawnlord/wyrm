@@ -1,4 +1,3 @@
-use std::io::Read;
 
 use crate::wasm_model::*;
 use std::str::from_utf8;
@@ -150,7 +149,6 @@ pub fn emit_wat(wasm: &WasmFile) -> String {
             WasmImportType::Table => "table",
             WasmImportType::Mem => "mem",
             WasmImportType::Global => "global",
-            _ => ""
         };
         wat += &indent(format!("({} $import{} (import \"{}\" \"{}\") {})\n",
             type_str, 

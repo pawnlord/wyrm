@@ -1,10 +1,7 @@
-use core::num;
 use std::{
-    default,
     fmt::Debug,
-    fs::{self, File},
-    io::{Error, Read, ErrorKind, self},
-    mem, ptr, arch::x86_64::_t1mskc_u32, f32::consts::E,
+    io::{Error, Read, ErrorKind},
+    mem,
 };
 
 use crate::wasm_model::*;
@@ -75,9 +72,11 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             out += ((buffer[0] & 0x7F & (std::cmp::min(64 - bits, 7))) as usize) << (7 * (bits / 7));
             bits += 7;
         }
+        
         if buffer[0] & 0x80 != 0 {
             return Err(Error::new(ErrorKind::InvalidData, "what"));
         }
+
         if buffer[0] & 0x40 != 0  && bits < 64{
             return Ok((out | (!0 << bits)) as i64);
         }
@@ -174,7 +173,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                     }
                     Prim::Void => {
                         // void or align
-                        let num = self.read_sized::<u8>(0)?;
+                        let _num = self.read_sized::<u8>(0)?;
                     }
                     // Number
                     _ => {
@@ -386,8 +385,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
     fn read_elem(&mut self) -> Result<WasmElem, Error> {
         let id = self.read_sized::<u8>(0)? as u32;
         let _type: WasmRefType;
-        let mut init: WasmExpr;
-        let mode: WasmElemMode;
+        let mut _init: WasmExpr;
+        let _mode: WasmElemMode;
         match id {
             0 => {
                 let e = self.read_expr()?;
@@ -438,7 +437,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                 todo!()
             }
             5 => {
-                mode = WasmElemMode::Passive;
+                _mode = WasmElemMode::Passive;
                 
                 todo!()
             }
@@ -447,7 +446,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
                 
             }
             7 => {
-                mode = WasmElemMode::Declarative;
+                _mode = WasmElemMode::Declarative;
 
                 todo!()
             }
@@ -520,7 +519,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         };
 
 
-        for i in 0..code_section.num_functions {
+        for _ in 0..code_section.num_functions {
             code_section.functions.push(self.read_function()?);
         }
         Ok(code_section)
@@ -534,7 +533,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         };
 
 
-        for i in 0..data_section.num_data_segs {
+        for _ in 0..data_section.num_data_segs {
             let header_flags = self.read_sized::<u8>(0)?;
             let expr = self.read_expr()?;
             let data_size = self.read_dynamic_uint(0)?;

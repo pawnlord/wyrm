@@ -6,7 +6,6 @@
 * "registers"
 */
 
-use crate::instr_table::get_instr;
 
 pub enum SpecialStackOp<T: UsdmSegment> {
     None,
@@ -102,13 +101,14 @@ impl<T: UsdmFrontend> Usdm<T> {
     }
 
     // The main analysis function
+    #[allow(dead_code)]
     pub fn analyze_data(&mut self) {
         for seg in self.expr_string.clone().iter() {
             let stack_op = seg.get_stack_operation();
-            let stack_growth = stack_op.out_types.len() - stack_op.in_types.len();
+            let _stack_growth = stack_op.out_types.len() - stack_op.in_types.len();
             let mut vars: Vec<UsdmExpression<T>> = vec![];
 
-            for var_in in stack_op.in_types {
+            for _var_in in stack_op.in_types {
                 vars.push(self.final_state.stack.pop().expect(
                     "Too many inputs for current stack size: Check if this is actually WASM code",
                 ));
@@ -116,7 +116,7 @@ impl<T: UsdmFrontend> Usdm<T> {
             
             match stack_op.special_op {
                 SpecialStackOp::None => {
-                    for (i, var_out) in stack_op.out_types.iter().enumerate() {
+                    for (i, _var_out) in stack_op.out_types.iter().enumerate() {
                         self.final_state.stack.push(UsdmExpression::UsdmExpr {
                             operation: seg.clone(),
                             out_num: i,

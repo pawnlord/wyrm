@@ -1,9 +1,7 @@
 use core::fmt;
 use std::{
-    borrow::Borrow,
     fmt::{Debug, Display, Formatter},
     io::{Error, ErrorKind},
-    ops::Deref,
     slice::Iter,
 };
 
@@ -120,7 +118,7 @@ impl ExprSeg {
             ExprSeg::Func(idx) => {
                 wat += format!("$func{:}", idx).as_str();
             }
-            ExprSeg::BrTable(table_const) => {}
+            ExprSeg::BrTable(_table_const) => {}
             ExprSeg::ControlFlow(info, expr, end_info) => {
                 // Add extra characters for indentation
                 wat += &format!("{:} $label{}\n  ", info.name, state.label);
@@ -395,7 +393,6 @@ pub fn type_values(t: Prim) -> (i32, String) {
         Prim::Global => (6, "global".to_string()),
         Prim::Func => (7, "funcidx".to_string()),
         Prim::Generic => (8, "generic".to_string()),
-        _ => (-1, "any".to_string()),
     }
 }
 

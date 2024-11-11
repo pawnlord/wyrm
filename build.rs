@@ -71,7 +71,7 @@ fn main() {
     let mut instr_list: HashMap<i64, Value> = HashMap::new();
     for sec in core {
         let sec_instrs = instructions[sec].as_object().unwrap();
-        for (name, instr) in sec_instrs {
+        for (_name, instr) in sec_instrs {
             instr_list.insert(instr["opcode"].as_i64().unwrap(), instr.clone());
         }
     }
@@ -129,7 +129,7 @@ fn main() {
         }
 
         let mut symbols = "".to_string();        
-        for (i, instr) in instr_list {
+        for (_i, instr) in instr_list {
             let name = instr["name"].as_str().unwrap().to_string();
             let opcode = instr["opcode"].as_u64().unwrap();
             

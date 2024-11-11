@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::fs::File;
 
 
@@ -5,6 +6,7 @@ use wasm_model::WasmIdiomPattern;
 
 use crate::instr_table::INSTRS;
 use crate::wat_emitter::emit_wat;
+
 
 mod wasm_model;
 mod file_reader;
