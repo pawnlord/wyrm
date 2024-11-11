@@ -1,8 +1,10 @@
 use std::collections::{HashSet, VecDeque};
+use std::fmt::Debug;
 use std::hash::Hash;
 
 
-pub trait GrammarTrait : Hash + PartialEq + Eq + Clone {
+pub trait GrammarTrait : Hash + PartialEq + Eq + Clone + Debug {
+    
     fn start_sym() -> Self;
 }
 
@@ -14,7 +16,6 @@ pub struct Rule<T: GrammarTrait + 'static> {
 
 pub struct Grammar<T: GrammarTrait + 'static> {
     pub rules: &'static [Rule<T>],
-    pub nonterminals: HashSet<T>,
 }
 
 impl<T: GrammarTrait + 'static> Grammar<T> {
@@ -29,24 +30,21 @@ impl<T: GrammarTrait + 'static> Grammar<T> {
     }
 
     pub const fn new(rules: &'static [Rule<T>]) -> Self {
-        let mut nonterminals = HashSet::<T>::new();
-        
-        for rule in rules.clone() {
-            nonterminals.insert(rule.left_hand);
-        }
-
-        Self {
-            rules: rules,
-            nonterminals
-        }
+        Self {rules: rules,}
     }
 
     pub fn is_nonterm(&self, elem: &T) -> bool {
-        self.nonterminals.contains(elem)
+        // This is annoyingly slow, but becuase I want grammars to be constant its needed.
+        for rule in self.rules.clone() {
+            if rule.left_hand == *elem {
+                return true;
+            }
+        }
+        false
     }
 }
 
-#[derive(Clone)]
+#[derive(Hash, PartialEq, Eq, Clone, Debug)]
 struct EarleyState<'a, T: GrammarTrait + 'static> {
     from: T,
     to: &'a [T],
@@ -73,15 +71,15 @@ impl<T: GrammarTrait + 'static> EarleyState<'_, T> {
     }
 }
 
-pub fn earley_parser<T: GrammarTrait + 'static>(sentence: Vec<T>, grammar: &Grammar<T>) {
-    let mut states = Vec::<Vec<EarleyState<T>>>::new();
+pub fn earley_parser<T: GrammarTrait + 'static>(sentence: Vec<T>, grammar: &Grammar<T>) -> bool {
+    let mut states = Vec::<HashSet<EarleyState<T>>>::new();
     for _ in 0..(sentence.len() + 1) {
-        states.push(Vec::new());
+        states.push(HashSet::new());
     }
     
     for rule in grammar.get_rules(T::start_sym()) {
         for value in rule.right_hand {
-            states[0].push(EarleyState::<'_, T> {
+            states[0].insert(EarleyState::<'_, T> {
                 from: rule.left_hand.clone(),
                 to: value,
                 origin: 0,
@@ -90,33 +88,64 @@ pub fn earley_parser<T: GrammarTrait + 'static>(sentence: Vec<T>, grammar: &Gram
         }
     }
 
+    println!("test");
     for i in 0..(sentence.len() + 1) {
         let mut queue = VecDeque::<EarleyState<T>>::new();
         
-        queue.append(&mut states[0].clone().into());
+        for state in states[i].clone() {
+            queue.push_back(state);
+        }
 
         while let Some(item) = queue.pop_front() {
+            println!("{:?}", queue);
             if !item.is_finished() {
                 let symbol = item.elem();
                 if grammar.is_nonterm(&symbol) {
                     for rule in grammar.rules.clone() {
                         if symbol == rule.left_hand {
-
+                            for possibility in rule.right_hand.clone() {
+                                let new_state = EarleyState::<'_, T> {
+                                    from: symbol.clone(),
+                                    to: possibility,
+                                    origin: i,
+                                    idx: 0
+                                };
+                                if !states[i].contains(&new_state) {
+                                    queue.push_back(new_state.clone());
+                                    states[i].insert(new_state);
+                                }
+                            }
                         }
                     }
 
                 } else {
-
+                    if i >= sentence.len() {
+                        continue
+                    }
+                    if sentence[i] == item.elem() {
+                        states[i + 1].insert(item.next());
+                    }
                 }
             } else {
+                println!("complete");
                 for state in states[item.origin].clone() {
                     if item.from == state.elem() {
-                        states[i].push(state.next());
+                        queue.push_back(state.next());
+                        states[i].insert(state.next());
                     }
                 }
             }
         }
     }
+
+    let start_rule = grammar.get_rules(T::start_sym())[0].right_hand[0];
+    println!("{:?}", states[sentence.len()]);
+    states[sentence.len()].contains(&EarleyState::<'_, T> {
+        from: T::start_sym(),
+        to: &start_rule,
+        origin: 0,
+        idx: start_rule.len()
+    })
 
 }
 
@@ -139,7 +168,7 @@ mod tests {
 
     use crate::parser::*;
     
-    #[derive(Hash, PartialEq, Eq, Clone)]
+    #[derive(Hash, PartialEq, Eq, Clone, Debug)]
     pub enum Symbols {
         P,
         S,
@@ -158,7 +187,7 @@ mod tests {
         }
     }
 
-    const grammar: prs::Grammar<Symbols> = prs::Grammar::<Symbols>::new(
+    const GRAMMAR: prs::Grammar<Symbols> = prs::Grammar::<Symbols>::new(
         &[
             rule!(Symbols, P, &[S]),
             rule!(Symbols, S, &[S, Plus, M], &[M]),
@@ -172,6 +201,6 @@ mod tests {
     fn earley_parser_test() {
         use Symbols::*;
         let sentence = vec![Two, Plus, Three, Times, Four];
-        earley_parser(sentence, &grammar);
+        assert!(earley_parser(sentence, &GRAMMAR));
     }
 }
