@@ -21,30 +21,23 @@ mod wasm_parser;
 mod parser;
 
 
+    
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
-pub enum Symbols {
+pub enum SimpleGrammar {
     P,
     S,
-    M,
-    T,
-    One,
-    Two,
-    Three,
-    Four,
-    Times,
-    Plus,
+    A,
 }
-impl prs::GrammarTrait for Symbols {
+
+impl prs::GrammarTrait for SimpleGrammar {
     fn start_sym() -> Self {
         Self::P
     }
 }
 
-const GRAMMAR: prs::Grammar<Symbols> = prs::Grammar::<Symbols>::new(&[
-    rule!(Symbols, P, &[S]),
-    rule!(Symbols, S, &[S, Plus, M], &[M]),
-    rule!(Symbols, M, &[M, Times, T], &[T]),
-    rule!(Symbols, T, &[One], &[Two], &[Three], &[Four]),
+const SIMPLE_GRAMMAR: prs::Grammar<SimpleGrammar> = prs::Grammar::<SimpleGrammar>::new(&[
+    rule!(SimpleGrammar, P, &[S]),
+    rule!(SimpleGrammar, S, &[S, S], &[A]),
 ]);
 
 fn main() {
@@ -70,8 +63,9 @@ fn main() {
     let wasm_file = file_reader::wasm_deserialize(file).unwrap();
     println!("{:}", emit_wat(&wasm_file));
 
-    use Symbols::*;
-    let sentence = vec![Two, Plus, Three, Times, Four];
-    println!("TESTING GRAMMAR");
-    assert!(earley_parser(sentence, &GRAMMAR));
+    use SimpleGrammar::*;
+    let sentence = vec![A, A, A];
+    println!("TESTING SIMPLE GRAMMAR");
+    assert!(earley_parser(sentence, &SIMPLE_GRAMMAR));
+
 }
