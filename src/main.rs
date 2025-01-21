@@ -23,21 +23,22 @@ mod parser;
 
     
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
-pub enum SimpleGrammar {
+pub enum AmbigSymbols {
     P,
     S,
-    A,
+    Plus,
+    One,
 }
 
-impl prs::GrammarTrait for SimpleGrammar {
+impl prs::GrammarTrait for AmbigSymbols {
     fn start_sym() -> Self {
         Self::P
     }
 }
 
-const SIMPLE_GRAMMAR: prs::Grammar<SimpleGrammar> = prs::Grammar::<SimpleGrammar>::new(&[
-    rule!(SimpleGrammar, P, &[S]),
-    rule!(SimpleGrammar, S, &[S, S], &[A]),
+const AMBIGUOUS_GRAMMAR: prs::Grammar<AmbigSymbols> = prs::Grammar::<AmbigSymbols>::new(&[
+    rule!(AmbigSymbols, P, &[S]),
+    rule!(AmbigSymbols, S, &[S, Plus, S], &[One]),
 ]);
 
 fn main() {
@@ -63,9 +64,10 @@ fn main() {
     let wasm_file = file_reader::wasm_deserialize(file).unwrap();
     println!("{:}", emit_wat(&wasm_file));
 
-    use SimpleGrammar::*;
-    let sentence = vec![A, A, A];
-    println!("TESTING SIMPLE GRAMMAR");
-    assert!(earley_parser(sentence, &SIMPLE_GRAMMAR));
+    
+    use AmbigSymbols::*;
+    let sentence = vec![One, Plus, One, Plus, One];
+    println!("TESTING AMBIGUSOUS GRAMMAR");
+    assert!(earley_parser(sentence, &AMBIGUOUS_GRAMMAR));
 
 }
