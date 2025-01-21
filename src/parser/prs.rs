@@ -1,6 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Debug;
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 use log::debug;
 
 pub trait GrammarTrait: Hash + PartialEq + Eq + Clone + Debug {
@@ -45,38 +45,32 @@ impl<T: GrammarTrait + 'static> Grammar<T> {
 }
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
-pub enum Derivation<T: GrammarTrait + 'static> {
+pub enum Derivation<'a, T: GrammarTrait + 'static> {
     ScannedFrom {
         symbol: T,
         idx: usize
     },
     CompletedFrom {
-        state_idx: usize,
-        member_idx: usize,
+        state: EarleyState<'a, T>,
     }
 }
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
-pub struct PackedNode<T: GrammarTrait + 'static> {
-    left_child: Derivation<T>,
+pub struct PackedNode<'a, T: GrammarTrait + 'static> {
+    left_child: Derivation<'a, T>,
 
     // Derivations cannot be empty
-    right_child: Option<Derivation<T>>
+    right_child: Option<Derivation<'a, T>>
 }
 
 #[derive(Clone, Debug)]
-struct EarleyState<'a, T: GrammarTrait + 'static> {
+pub struct EarleyState<'a, T: GrammarTrait + 'static> {
     from: T,
     to: &'a [T],
     origin: usize,
     idx: usize,
 
-    // Information for recreating the parse tree
-    // Should be unique!!
-    state_idx: usize, 
-    member_idx: usize, 
-
-    packed_nodes: Vec<PackedNode<T>>
+    packed_nodes: Vec<PackedNode<'a, T>>
 }
 
 impl<T: GrammarTrait + 'static> PartialEq for EarleyState<'_, T> {
@@ -84,6 +78,17 @@ impl<T: GrammarTrait + 'static> PartialEq for EarleyState<'_, T> {
         self.from == other.from && self.to == other.to && self.origin == other.origin && self.idx == other.idx
     }
 }
+impl<T: GrammarTrait + 'static> Eq for EarleyState<'_, T> {}
+
+impl<T: GrammarTrait + 'static> Hash for EarleyState<'_, T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.from.hash(state);
+        self.to.hash(state);
+        self.origin.hash(state);
+        self.idx.hash(state);
+    }
+}
+
 
 
 impl<'a, T: GrammarTrait + 'static> EarleyState<'a, T> {
@@ -93,57 +98,35 @@ impl<'a, T: GrammarTrait + 'static> EarleyState<'a, T> {
 
     // Step forward this state with the statements that completed it
     // as a sub node
-    fn next(&self, state_idx: usize, member_idx: usize) -> Self {
+    fn next(&self, completed: Self) -> Self {
         let mut new: Vec::<PackedNode<T>> = Vec::new();
-        
-        for node in self.packed_nodes.clone() {
-            if node.right_child.is_some() {
-                new.push(PackedNode {
-                    left_child: Derivation::CompletedFrom { state_idx: self.state_idx, member_idx: self.member_idx },
-                    right_child: Some(Derivation::CompletedFrom { state_idx, member_idx }),
-                });
-            } else {
-                new.push(PackedNode {
-                    left_child: node.left_child,
-                    right_child: Some(Derivation::CompletedFrom { state_idx, member_idx }),
-                });
-            }
-        }
-
-
+        new.push(PackedNode {
+            left_child: Derivation::CompletedFrom { state: self.clone() },
+            right_child: Some(Derivation::CompletedFrom { state: completed.clone() })
+        });
         Self {
             from: self.from.clone(),
             to: self.to.clone(),
             origin: self.origin,
             idx: self.idx + 1,
-            state_idx,
-            member_idx,
             packed_nodes: new,
         }
     }
     
     // Step forward this state with the value that was scanned
-    fn next_scanned(&self, val: T, idx: usize, state_idx: usize, member_idx: usize) -> Self {
+    fn next_scanned(&self, val: T, idx: usize) -> Self {
         let mut new: Vec::<PackedNode<T>> = Vec::new();
         
-        for node in self.packed_nodes.clone() {
-            if node.right_child.is_some() {
-                new.push(PackedNode {
-                    left_child: Derivation::CompletedFrom { state_idx: self.state_idx, member_idx: self.member_idx },
-                    right_child: Some(Derivation::ScannedFrom { symbol: val.clone(), idx })
-                });
-            } else {
-                new.push(PackedNode {
-                    left_child: node.left_child,
-                    right_child: Some(Derivation::ScannedFrom { symbol: val.clone(), idx })
-                });
-            }
-        }
 
         if self.packed_nodes.len() == 0 {
             new.push(PackedNode {
                 left_child: Derivation::ScannedFrom { symbol: val.clone(), idx },
                 right_child: None
+            });
+        } else {            
+            new.push(PackedNode {
+                left_child: Derivation::CompletedFrom { state: self.clone() },
+                right_child: Some(Derivation::ScannedFrom { symbol: val.clone(), idx })
             });
         }
 
@@ -152,42 +135,49 @@ impl<'a, T: GrammarTrait + 'static> EarleyState<'a, T> {
             to: self.to.clone(),
             origin: self.origin,
             idx: self.idx + 1,
-            state_idx,
-            member_idx,
             packed_nodes: new,
         }
     }
 
 
+    fn join(&mut self, other: &Self) {
+        self.packed_nodes.append(&mut other.packed_nodes.clone());
+    }
 
     fn elem(&self) -> T {
         self.to[self.idx].clone()
     }
 }
 
-fn print_earley_states<T: GrammarTrait + 'static, F>(states: &Vec<EarleyState<T>>, _grammar: &Grammar<T>, end: usize, output: F)
+fn earley_state_repr<T: GrammarTrait + 'static>(state: &EarleyState<T>) -> String {
+    let mut repr = "".to_string();
+    repr += format!("{:?} -> ", state.from).as_str();
+    for i in 0..state.idx {
+        repr += format!("{:?} ", state.to[i]).as_str();
+    }
+    repr += format!("*").as_str();
+    for i in state.idx..state.to.len() {
+        repr += format!(" {:?}", state.to[i]).as_str();
+    }
+    repr += format!(", {}", state.origin).as_str();
+    repr
+}
+fn print_earley_states<T: GrammarTrait + 'static, F>(states: &HashSet<EarleyState<T>>, _grammar: &Grammar<T>, end: usize, output: F)
     where F: Fn(String) -> () {
 
     for (i, state) in states.clone().iter().enumerate() {
-        let mut repr = "".to_string();
-        repr += format!("{}:\t{:?} -> ", i, state.from).as_str();
-        for i in 0..state.idx {
-            repr += format!("{:?} ", state.to[i]).as_str();
-        }
-        repr += format!("*").as_str();
-        for i in state.idx..state.to.len() {
-            repr += format!(" {:?}", state.to[i]).as_str();
-        }
-        repr += format!(", {}, {}", state.origin, end).as_str();
+        let mut repr = format!("{}:\t", i);
+        repr += earley_state_repr(state).as_str();
+        repr += format!(", {}", end).as_str();
 
         if state.packed_nodes.len() > 0 {
-            repr += " packed_nodes: ";
+            repr += "\t packed_nodes: ";
             repr += state.packed_nodes.iter().map(|node| {
                 let mut str = "".to_string();
 
                 str += match &node.left_child {
-                    Derivation::CompletedFrom { state_idx, member_idx } => {
-                        format!("-> ({}, {})", state_idx, member_idx)
+                    Derivation::CompletedFrom { state } => {
+                        earley_state_repr(state)
                     },
                     Derivation::ScannedFrom { symbol, idx } => {
                         format!("{:?} @ {}", symbol, idx)
@@ -195,9 +185,10 @@ fn print_earley_states<T: GrammarTrait + 'static, F>(states: &Vec<EarleyState<T>
                 }.as_str();
 
                 if let Some(right_child) = &node.right_child {
+                    str += " || ";
                     str += match right_child {
-                        Derivation::CompletedFrom { state_idx, member_idx } => {
-                            format!(" & -> ({}, {})", state_idx, member_idx)
+                        Derivation::CompletedFrom { state } => {
+                            earley_state_repr(state)
                         },
                         Derivation::ScannedFrom { symbol, idx } => {
                             format!(" & {:?} @ {}", symbol, idx)
@@ -215,23 +206,20 @@ fn print_earley_states<T: GrammarTrait + 'static, F>(states: &Vec<EarleyState<T>
 }
 
 pub fn earley_parser<T: GrammarTrait + 'static>(sentence: Vec<T>, grammar: &Grammar<T>) -> bool {
-    let mut states = Vec::<Vec<EarleyState<T>>>::new();
+    let mut states = Vec::<HashSet<EarleyState<T>>>::new();
     for _ in 0..(sentence.len() + 1) {
-        states.push(Vec::new());
+        states.push(HashSet::new());
     }
 
     // The initial rules, from which all rules will be derived
     for rule in grammar.get_rules(T::start_sym()) {
         for value in rule.right_hand {
             let len = states[0].len();
-            states[0].push(EarleyState::<'_, T> {
+            states[0].insert(EarleyState::<'_, T> {
                 from: rule.left_hand.clone(),
                 to: value,
                 origin: 0,
                 idx: 0,
-
-                state_idx: 0,
-                member_idx: len,
                 
                 packed_nodes: Vec::new(),
             });
@@ -268,8 +256,6 @@ pub fn earley_parser<T: GrammarTrait + 'static>(sentence: Vec<T>, grammar: &Gram
                                     origin: i,
                                     idx: 0,
                                     
-                                    state_idx: i,
-                                    member_idx: len,
                                     
                                     packed_nodes: Vec::new(),
                                 };
@@ -277,7 +263,7 @@ pub fn earley_parser<T: GrammarTrait + 'static>(sentence: Vec<T>, grammar: &Gram
                                 // This seems slow, look at for speed in the future
                                 if !states[i].contains(&new_state) {
                                     queue.push_back(new_state.clone());
-                                    states[i].push(new_state);
+                                    states[i].insert(new_state);
                                 }
                             }
                         }
@@ -291,7 +277,11 @@ pub fn earley_parser<T: GrammarTrait + 'static>(sentence: Vec<T>, grammar: &Gram
                 
                     if sentence[i] == item.elem() {
                         let len = states[i + 1].len();
-                        states[i + 1].push(item.next_scanned(sentence[i].clone(), i, i + 1, len));
+                        let mut next = item.next_scanned(sentence[i].clone(), i);
+                        if let Some(other)  = states[i + 1].get(&next) {
+                            next.join(other);
+                        }
+                        states[i + 1].insert(next);
                     }
                 }
             } else {
@@ -304,9 +294,12 @@ pub fn earley_parser<T: GrammarTrait + 'static>(sentence: Vec<T>, grammar: &Gram
                     }
 
                     if item.clone().from == state.elem() {
-                        let next = state.next(state.state_idx, state.member_idx);
+                        let mut next = state.next(item.clone());
+                        if let Some(other)  = states[i].get(&next) {
+                            next.join(other);
+                        }
                         queue.push_back(next.clone());
-                        states[i].push(next);
+                        states[i].insert(next);
                     }
                 }
             }
@@ -324,8 +317,6 @@ pub fn earley_parser<T: GrammarTrait + 'static>(sentence: Vec<T>, grammar: &Gram
         to: &start_rule,
         origin: 0,
         idx: start_rule.len(),
-        state_idx: 0,
-        member_idx: 0,
         packed_nodes: Vec::new(),
     })
 }
