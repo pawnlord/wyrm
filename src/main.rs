@@ -66,8 +66,9 @@ fn main() {
 
     let wasm_file = file_reader::wasm_deserialize(file).unwrap();
     println!("{:}", emit_wat(&wasm_file));
-    println!("{:?}", wasm_file.code_section.functions[60].raw_body.as_slice());
-    let result = earley_parser(wasm_file.code_section.functions[60].raw_body.clone(), &PARSER_GRAMMAR);
+    println!("{:?}", wasm_file.code_section.functions[59].raw_body.as_slice());
+    println!("{:?}", wasm_file.code_section.functions[59].raw_body.len());
+    let result = earley_parser(wasm_file.code_section.functions[59].raw_body.clone(), &PARSER_GRAMMAR);
     
     assert!(result.is_some());
     println!("{}", result.is_some());

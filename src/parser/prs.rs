@@ -218,28 +218,38 @@ pub struct EarleySppf<'a, T: GrammarTrait + 'static> {
     pub root: EarleyState<'a, T>
 }
 
+fn find_state<'a, T: GrammarTrait + 'static>(state: &EarleyState<'a, T>, states: &Vec::<HashSet<EarleyState<'a, T>>>) -> Option<EarleyState<'a, T>> {
+    for step in states {
+        let maybe_state = step.get(state);
+        if maybe_state.is_some() {
+            return Some(maybe_state.unwrap().clone());
+        }
+    }
+
+    None
+}
+
 fn create_sppf<'a, T: GrammarTrait + 'static>(state: &EarleyState<'a, T>, states: &Vec::<HashSet<EarleyState<'a, T>>>) -> EarleySppf<'a, T> {
     let mut new_states: HashSet<EarleyState<T>> = HashSet::<EarleyState<T>>::new();
     let mut full_set: HashSet<EarleyState<T>> = HashSet::<EarleyState<T>>::new();
-    // Create the full set and then cut it down to size
-    for set in states {
-        full_set = full_set.union(set).map(|x| x.clone()).collect();
-    }
 
     let mut queue = VecDeque::<EarleyState<T>>::new();
     queue.push_back(state.clone());
 
     // Go down the forest and find all the elements referenced.
     // Add any completed derivation to the queue until none are left
+    let mut i = 0;
     while let Some(item) = queue.pop_front() {
+        i += 1;
+        println!("{} ", i);
         for p in item.clone().packed_nodes {
             match p.left_child {
-                Derivation::CompletedFrom { state } => queue.push_back(full_set.get(&state).unwrap().clone()),
+                Derivation::CompletedFrom { state } => queue.push_back(find_state(&state, states).unwrap()),
                 _ => ()
             }
             if let Some(right) = p.right_child {
                 match right {
-                    Derivation::CompletedFrom { state } => queue.push_back(full_set.get(&state).unwrap().clone()),
+                    Derivation::CompletedFrom { state } => queue.push_back(find_state(&state, states).unwrap()),
                     _ => ()
                 }                    
             }
@@ -362,11 +372,12 @@ pub fn earley_parser<'a, T: GrammarTrait + 'static>(sentence: Vec<T>, grammar: &
 
         debug!("states {}", i);
         debug!("------------------------");
-        print_earley_states(&states[i], grammar, i, |x| debug!("{}", x));
+        // print_earley_states(&states[i], grammar, i, |x| debug!("{}", x));
     }
 
     let start_rule = grammar.get_rules(T::start_sym())[0].right_hand[0];
-    // println!("{:?}", states[sentence.len()]);
+    // print_earley_states(&states[i], grammar, i, |x| debug!("{}", x));
+    println!("{:?}", states[sentence.len()]);
     states[sentence.len()].get(&EarleyState::<'_, T> {
         from: T::start_sym(),
         to: &start_rule,
