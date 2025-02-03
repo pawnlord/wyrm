@@ -12,7 +12,7 @@ fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<W
     
     let wasm_type = state.read_sized(WasmTypeAnnotation { _type: 0 })?;
     let mutability = state.read_sized(0)?;
-    let expr = state.read_expr()?;
+    let expr = state.read_expr()?.0;
 
     Ok(WasmGlobal {
         wasm_type,
@@ -24,9 +24,22 @@ fn read_global<T: Read + Debug>(state: &mut WasmDeserializeState<T>) -> Result<W
 #[derive(Debug)]
 struct WasmDeserializeState<T: Read + Debug> {
     buffer: T,
+    raw_section: Vec<u8>,
+    save_read: bool,
 }
 
 impl<T: Read + Debug> WasmDeserializeState<T> {
+
+    fn start_raw_section(&mut self) {
+        self.raw_section.clear();
+        self.save_read = true;
+    }
+
+    
+    fn end_raw_section(&mut self) {
+        self.save_read = false;
+    }
+
     // Read a value of known size
     fn read_sized<U: Sized + Clone>(&mut self, default: U) -> Result<U, Error> {
         let mut out: U = default.clone();
@@ -39,7 +52,11 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             let buffer: &mut [u8] =
                 std::slice::from_raw_parts_mut((&mut out as *mut U).cast(), mem::size_of::<U>());
             self.buffer.read_exact(buffer)?;
+            if self.save_read {
+                self.raw_section.append(buffer.to_vec().as_mut());
+            }
         }
+
         return Ok(out);
     }
 
@@ -49,10 +66,20 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         let mut buffer: [u8; 1] = [0];
 
         self.buffer.read_exact(&mut buffer)?;
+        
+        if self.save_read {
+            self.raw_section.append(buffer.to_vec().as_mut());
+        }
+
         out += (buffer[0] & 0x7F) as usize;
         let mut bits = 7;
         while buffer[0] & 0x80 != 0 && bits < 64 {
             self.buffer.read_exact(&mut buffer)?;
+        
+            if self.save_read {
+                self.raw_section.append(buffer.to_vec().as_mut());
+            }
+
             out += ((buffer[0] & 0x7F & (!(1 << std::cmp::min(64 - bits, 7)))) as usize) << (7 * (bits / 7));
             bits += 7;
         }
@@ -65,12 +92,23 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         let mut buffer: [u8; 1] = [0];
 
         self.buffer.read_exact(&mut buffer)?;
+        
+        if self.save_read {
+            self.raw_section.append(buffer.to_vec().as_mut());
+        }
+
         out += (buffer[0] & 0x7F) as usize;
         let mut bits = 7;
         while buffer[0] & 0x80 != 0 && bits < 64 {
             self.buffer.read_exact(&mut buffer)?;
+
             out += ((buffer[0] & 0x7F & (std::cmp::min(64 - bits, 7))) as usize) << (7 * (bits / 7));
             bits += 7;
+            
+            if self.save_read {
+                self.raw_section.append(buffer.to_vec().as_mut());
+            }
+
         }
         
         if buffer[0] & 0x80 != 0 {
@@ -111,7 +149,10 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         return Ok(out);
     }
 
-    fn read_expr(&mut self) -> Result<WasmExpr, Error>  {
+    fn read_expr(&mut self) -> Result<(WasmExpr, Vec<u8>), Error>  {
+
+        self.start_raw_section();
+
         let mut scope: Vec<Box<WasmExpr>> = vec![];
         let mut last_scope = WasmExpr::new_box();
         let mut expr_box = WasmExpr::new_box();
@@ -212,7 +253,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             }
             expr.push(ExprSeg::Instr(instr_layout));
         }
-        Ok(*expr_box)
+        self.end_raw_section();
+        Ok((*expr_box, self.raw_section.clone()))
 
     }
 
@@ -389,7 +431,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
         let _mode: WasmElemMode;
         match id {
             0 => {
-                let e = self.read_expr()?;
+                let e = self.read_expr()?.0;
                 let y_size = self.read_dynamic_uint(0)?;
                 let ys = self.read_vector_dynamic(y_size)?;
                 Ok(WasmElem{
@@ -411,7 +453,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             }
             2 => {
                 let x = self.read_dynamic_uint(0)?;
-                let e = self.read_expr()?;
+                let e = self.read_expr()?.0;
                 let et = self.read_sized::<u8>(0)?;
                 let y_size = self.read_dynamic_uint(0)?;
                 let ys = self.read_vector_dynamic(y_size)?;
@@ -506,7 +548,8 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
             size,
             local_types,
             locals,
-            body
+            body: body.0,
+            raw_body: body.1.into_iter().map(|x| x as u64).collect()
         })        
     }
     
@@ -535,7 +578,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
 
         for _ in 0..data_section.num_data_segs {
             let header_flags = self.read_sized::<u8>(0)?;
-            let expr = self.read_expr()?;
+            let expr = self.read_expr()?.0;
             let data_size = self.read_dynamic_uint(0)?;
             let header = WasmDataSegHeader  { header_flags, expr, data_size };
 
@@ -550,7 +593,7 @@ impl<T: Read + Debug> WasmDeserializeState<T> {
 }
 // Reads a WASM file to a WasmFile struct.
 pub fn wasm_deserialize(buffer: impl Read + Debug) -> Result<WasmFile, Error> {
-    let mut state = WasmDeserializeState { buffer };
+    let mut state = WasmDeserializeState { buffer, raw_section: Vec::new(), save_read: false };
     let mut wasm_header: WasmHeader = WasmHeader {
         magic_number: 0,
         version: 0,

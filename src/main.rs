@@ -10,6 +10,7 @@ use crate::wat_emitter::emit_wat;
 use std::env;
 use prs::{earley_parser, print_earley_states, user_rule};
 use crate::parser::*;
+use crate::wasm_parser::PARSER_GRAMMAR;
 use simple_logger::SimpleLogger;
 
 
@@ -53,7 +54,7 @@ fn main() {
     println!("{:?}", args);
     let info = INSTRS[2];
     println!("{:?}", info);
-    
+
     let file = if args.len() < 2 {
         File::open("snake.wasm").unwrap()
     } else {
@@ -65,8 +66,11 @@ fn main() {
 
     let wasm_file = file_reader::wasm_deserialize(file).unwrap();
     println!("{:}", emit_wat(&wasm_file));
-    earley_parser(sentence, grammar)
+    println!("{:?}", wasm_file.code_section.functions[60].raw_body.as_slice());
+    let result = earley_parser(wasm_file.code_section.functions[60].raw_body.clone(), &PARSER_GRAMMAR);
     
+    assert!(result.is_some());
+    println!("{}", result.is_some());
     // use AmbigSymbols::*;
     // let sentence = vec![One, Plus, One, Plus, One];
     // println!("TESTING AMBIGUSOUS GRAMMAR");

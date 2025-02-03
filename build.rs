@@ -14,6 +14,20 @@ fn value_to_type_signature(value: Value) -> String {
 }
 
 
+fn value_to_grammar(value: Value) -> String {
+
+    let json_sig: Vec<String> = value.as_array().unwrap().iter()
+        .map(|x| format!("TERM_{}", x.as_str().unwrap().to_uppercase())).collect();
+
+    if json_sig.len() == 0 {
+        return "".to_string();
+    }
+
+    let sig = json_sig.join(", ");
+
+    return format!(", {}", sig);
+}
+
 fn main() {
     println!("cargo::rerun-if-changed=instr_table.json");
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -140,13 +154,18 @@ fn main() {
             
             let normalized_ident = name.replace(".", "_").replace("@", "_").to_uppercase();
 
-            let instr_string = "#[allow(dead_code)]\n".to_string() + format!(r#"const {}: u64 = {};"#, normalized_ident, opcode.to_string()).as_str() + "\n";
+            let instr_string = "#[allow(dead_code)]\n".to_string() + format!(r#"pub const {}: u64 = {};"#, normalized_ident, opcode.to_string()).as_str() + "\n";
             symbols += instr_string.as_str();
 
-            all_symbols.push(normalized_ident);
+
             let signature = instr["signature"].as_array().unwrap();
             let in_types = signature[0].clone().as_array().unwrap();
             let out_types = signature[1].clone().as_array().unwrap();
+            let constants = value_to_grammar(signature[2].clone());
+            
+            let grammar_rule = normalized_ident.clone() + constants.clone().as_str();
+
+            all_symbols.push(grammar_rule);
             // if in_types.len() == 0 && out_types.len() == 0 {
             //     // Does not effect the stack
             //     stack_nops.push(normalized_ident);
@@ -161,17 +180,33 @@ fn main() {
             //     stack_push2.push(normalized_ident);
             // } 
         }
+
+        // Some useful stuff for the grammar
+        let bytes = "[&[".to_string() 
+                                + (0..=255).into_iter().map(|x| x.to_string()).collect::<Vec<String>>().join("], &[").as_str()
+                                + "]]";
+        // For LEB128
+        let lower_bytes = "[&[".to_string() 
+                                + (0..=127).into_iter().map(|x| x.to_string()).collect::<Vec<String>>().join("], &[").as_str()
+                                + "]]";
+        let upper_bytes = "[&[".to_string() 
+                                + (128..=255).into_iter().map(|x| x.to_string()).collect::<Vec<String>>().join("], &[").as_str()
+                                + "]]";
         
+
         let num_symbols = all_symbols.len();
         let all_symbols = "[&[".to_string() + all_symbols.join("], &[").as_str() + "]]";
 
         let _ = writer.write(format!("pub const INSTRS: [InstrInfo; 256] = [{}];
                                             {}
-                                            const all_symbols: [&[u64]; {}] = {};
+                                            pub const all_symbols: [&[u64]; {}] = {};
+                                            pub const bytes: [&[u64]; 256] = {};
+                                            pub const lower_bytes: [&[u64]; 128] = {};
+                                            pub const upper_bytes: [&[u64]; 128] = {};
                                             ", instruction_list,
                                             symbols,
-                                            num_symbols,
-                                            all_symbols).as_bytes());
+                                            num_symbols, all_symbols,
+                                            bytes, lower_bytes, upper_bytes).as_bytes());
 
 
     }
