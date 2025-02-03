@@ -8,6 +8,7 @@ use std::{
 use crate::{
     instr_table::*,
     usdm::{SpecialStackOp, StackOperation, UsdmFrontend, UsdmSegment},
+    parser::prs
 };
 
 pub trait TypeTrait {}
@@ -665,14 +666,19 @@ pub struct WasmFile {
     pub data_count_section: WasmDataCountSection,
 }
 
-// TODO: Model how the instruction affects the stack
 #[derive(Clone, Copy)]
 pub struct InstrInfo {
+    // The opcode
     pub instr: u8,
+    // The identifier
     pub name: &'static str,
+    // What we take (non-immediates, from the stack)
     pub in_types: &'static [Prim],
+    // What we output (to the stack)
     pub out_types: &'static [Prim],
+    // What we take from the file
     pub constants: &'static [Prim],
+    // Does an align byte follow?
     pub takes_align: bool,
 }
 
@@ -809,6 +815,19 @@ pub fn calculate_body_len(expr: &WasmExpr) -> usize {
         }
     }
     total
+}
+
+// Control symbols
+pub const START: u64 = u64::MAX - 1;
+pub const STMT: u64 = u64::MAX - 2;
+pub const STMTS: u64 = u64::MAX - 3;
+pub const INSTR: u64 = u64::MAX - 4;
+pub const ADD_U64_OP: u64 = u64::MAX - 5;
+
+impl prs::GrammarTrait for u64 {
+    fn start_sym() -> Self {
+        START
+    }
 }
 
 impl WasmFile {

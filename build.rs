@@ -124,11 +124,16 @@ fn main() {
                 i, name,
                 in_types, out_types, constants,
                 takes_align);
-            instruction_list += instr_string.as_str();                
-            
+            instruction_list += instr_string.as_str();                   
         }
 
         let mut symbols = "".to_string();        
+        let mut all_symbols = Vec::<String>::new();
+        let mut stack_nops = Vec::<String>::new();
+        // Things that change the stack, but not up or down: effects what's on top
+        let mut stack_push1 = Vec::<String>::new();
+        let mut stack_pop1 = Vec::<String>::new();
+        let mut stack_push2 = Vec::<String>::new();
         for (_i, instr) in instr_list {
             let name = instr["name"].as_str().unwrap().to_string();
             let opcode = instr["opcode"].as_u64().unwrap();
@@ -137,11 +142,37 @@ fn main() {
 
             let instr_string = "#[allow(dead_code)]\n".to_string() + format!(r#"const {}: u64 = {};"#, normalized_ident, opcode.to_string()).as_str() + "\n";
             symbols += instr_string.as_str();
-            
+
+            all_symbols.push(normalized_ident);
+            let signature = instr["signature"].as_array().unwrap();
+            let in_types = signature[0].clone().as_array().unwrap();
+            let out_types = signature[1].clone().as_array().unwrap();
+            // if in_types.len() == 0 && out_types.len() == 0 {
+            //     // Does not effect the stack
+            //     stack_nops.push(normalized_ident);
+            // }
+            // if out_types.len() == 1 {
+            //     stack_push1.push(normalized_ident);
+            // } 
+            // if in_types.len() == 1 {
+            //     stack_pop1.push(normalized_ident);
+            // } 
+            // if out_types.len() == 2 {
+            //     stack_push2.push(normalized_ident);
+            // } 
         }
         
+        let num_symbols = all_symbols.len();
+        let all_symbols = "[&[".to_string() + all_symbols.join("], &[").as_str() + "]]";
+
         let _ = writer.write(format!("pub const INSTRS: [InstrInfo; 256] = [{}];
-                                            {}", instruction_list, symbols).as_bytes());
+                                            {}
+                                            const all_symbols: [&[u64]; {}] = {};
+                                            ", instruction_list,
+                                            symbols,
+                                            num_symbols,
+                                            all_symbols).as_bytes());
+
 
     }
 }

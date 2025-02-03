@@ -9,3 +9,5 @@
 .vscode
 wasm_instrs.h
 wasm_instrs.py
+
+.gdb_history

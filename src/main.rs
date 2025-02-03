@@ -2,12 +2,13 @@
 use std::fs::File;
 
 
+use log::debug;
 use wasm_model::WasmIdiomPattern;
 
 use crate::instr_table::INSTRS;
 use crate::wat_emitter::emit_wat;
 use std::env;
-use prs::{earley_parser, rule};
+use prs::{earley_parser, print_earley_states, user_rule};
 use crate::parser::*;
 use simple_logger::SimpleLogger;
 
@@ -37,8 +38,8 @@ impl prs::GrammarTrait for AmbigSymbols {
 }
 
 const AMBIGUOUS_GRAMMAR: prs::Grammar<AmbigSymbols> = prs::Grammar::<AmbigSymbols>::new(&[
-    rule!(AmbigSymbols, P, &[S]),
-    rule!(AmbigSymbols, S, &[S, Plus, S], &[One]),
+    user_rule!(AmbigSymbols, P, &[S]),
+    user_rule!(AmbigSymbols, S, &[S, Plus, S], &[One]),
 ]);
 
 fn main() {
@@ -52,6 +53,7 @@ fn main() {
     println!("{:?}", args);
     let info = INSTRS[2];
     println!("{:?}", info);
+    
     let file = if args.len() < 2 {
         File::open("snake.wasm").unwrap()
     } else {
@@ -63,11 +65,12 @@ fn main() {
 
     let wasm_file = file_reader::wasm_deserialize(file).unwrap();
     println!("{:}", emit_wat(&wasm_file));
-
+    earley_parser(sentence, grammar)
     
-    use AmbigSymbols::*;
-    let sentence = vec![One, Plus, One, Plus, One];
-    println!("TESTING AMBIGUSOUS GRAMMAR");
-    assert!(earley_parser(sentence, &AMBIGUOUS_GRAMMAR));
-
+    // use AmbigSymbols::*;
+    // let sentence = vec![One, Plus, One, Plus, One];
+    // println!("TESTING AMBIGUSOUS GRAMMAR");
+    // let result = earley_parser(sentence, &AMBIGUOUS_GRAMMAR);
+    // assert!(result.is_some());
+    // print_earley_states(&result.unwrap().states, &AMBIGUOUS_GRAMMAR, 0, |x| debug!("{}", x));
 }
