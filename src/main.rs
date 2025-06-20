@@ -18,7 +18,6 @@ mod wasm_model;
 mod file_reader;
 mod instr_table;
 mod wat_emitter;
-mod usdm;
 mod wasm_parser;
 mod parser;
 
@@ -62,16 +61,16 @@ fn main() {
 
     };
 
-    WasmIdiomPattern::double();
 
     let wasm_file = file_reader::wasm_deserialize(file).unwrap();
     println!("{:}", emit_wat(&wasm_file));
-    println!("{:?}", wasm_file.code_section.functions[59].raw_body.as_slice());
-    println!("{:?}", wasm_file.code_section.functions[59].raw_body.len());
-    let result = earley_parser(wasm_file.code_section.functions[59].raw_body.clone(), &PARSER_GRAMMAR);
+    // println!("{:?}", wasm_file.code_section.functions[59].raw_body.as_slice());
+    // println!("{:?}", wasm_file.code_section.functions[59].raw_body.len());
+
+    // let result = earley_parser(wasm_file.code_section.functions[59].raw_body.clone(), &PARSER_GRAMMAR);
     
-    assert!(result.is_some());
-    println!("{}", result.is_some());
+    // assert!(result.is_some());
+    // println!("{}", result.is_some());
     // use AmbigSymbols::*;
     // let sentence = vec![One, Plus, One, Plus, One];
     // println!("TESTING AMBIGUSOUS GRAMMAR");

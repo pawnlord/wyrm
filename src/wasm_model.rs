@@ -7,7 +7,6 @@ use std::{
 
 use crate::{
     instr_table::*,
-    usdm::{SpecialStackOp, StackOperation, UsdmFrontend, UsdmSegment},
     parser::prs
 };
 
@@ -141,28 +140,6 @@ impl ExprSeg {
             _ => {}
         }
         wat
-    }
-}
-
-impl UsdmSegment for ExprSeg {
-    type Type = Prim;
-
-    fn get_stack_operation(&self) -> StackOperation<Self> {
-        match self {
-            Self::Operation(info) => info.get_stack_operation(),
-            Self::Instr(segs) => {
-                if segs.len() == 0 {
-                    return StackOperation::new();
-                }
-
-                let Self::Operation(info) = segs[0] else {
-                    return StackOperation::new();
-                };
-
-                info.get_stack_operation()
-            }
-            _ => StackOperation::new(),
-        }
     }
 }
 
@@ -371,15 +348,6 @@ fn new_expr(expr_string: Vec<ExprSeg>) -> WasmExpr {
 impl From<Vec<ExprSeg>> for WasmExpr {
     fn from(expr_string: Vec<ExprSeg>) -> Self {
         Self { expr_string }
-    }
-}
-
-impl UsdmFrontend for WasmExpr {
-    type Type = Prim;
-    type Segment = ExprSeg;
-    type SegmentIterator<'a> = Iter<'a, ExprSeg>;
-    fn iter<'a>(&'a self) -> Self::SegmentIterator<'a> {
-        self.expr_string.iter()
     }
 }
 
@@ -683,38 +651,6 @@ pub struct InstrInfo {
     pub takes_align: bool,
 }
 
-impl InstrInfo {
-    pub fn get_stack_operation(&self) -> StackOperation<ExprSeg> {
-        let created_type = if self.instr == get_instr("i32.const").unwrap().instr {
-            Prim::I32
-        } else if self.instr == get_instr("i64.const").unwrap().instr {
-            Prim::I64
-        } else if self.instr == get_instr("f32.const").unwrap().instr {
-            Prim::F32
-        } else if self.instr == get_instr("f64.const").unwrap().instr {
-            Prim::F64
-        } else if self.instr == get_instr("ref.func").unwrap().instr {
-            Prim::Func
-        } else {
-            Prim::Void
-        };
-
-        if created_type == Prim::Void {
-            StackOperation {
-                in_types: self.in_types.clone().to_vec(),
-                out_types: self.out_types.clone().to_vec(),
-                special_op: SpecialStackOp::<ExprSeg>::None,
-            }
-        } else {
-            StackOperation {
-                in_types: self.in_types.clone().to_vec(),
-                out_types: self.out_types.clone().to_vec(),
-                special_op: SpecialStackOp::<ExprSeg>::CreateVar(created_type),
-            }
-        }
-    }
-}
-
 impl Debug for InstrInfo {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let out_string: String = self
@@ -839,7 +775,7 @@ pub const QWORD: u64 = u64::MAX - 18;
 pub const BYTE: u64 = u64::MAX - 19;
 pub const LOW_BYTE: u64 = u64::MAX - 20;
 pub const HIGH_BYTE: u64 = u64::MAX - 21;
-pub const ADD_U64_OP: u64 = u64::MAX - 22;
+pub const ADD_I64_OP: u64 = u64::MAX - 22;
 
 impl prs::GrammarTrait for u64 {
     fn start_sym() -> Self {

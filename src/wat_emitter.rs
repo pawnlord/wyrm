@@ -118,7 +118,7 @@ pub fn func_to_wat(&self, i: usize, func: &WasmFunction) -> String {
                         .reduce(|acc, s| (acc + " " + &s).to_string())
                         .unwrap_or("".to_string()).to_string() + "\n", 1);
     }
-    wat += &indent(format!("{:}\n", func.body.emit_block_wat(blank_emitter()).1), 1);
+    wat += &indent(format!("{:}", func.body.emit_block_wat(blank_emitter()).1), 1);
     wat += ")\n";
     wat
 }
