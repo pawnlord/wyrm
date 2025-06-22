@@ -155,6 +155,39 @@ impl<'a, T: GrammarTrait + 'static> EarleyState<'a, T> {
     pub fn elem(&self) -> T {
         self.to[self.idx].clone()
     }
+
+    // Traverses the parse tree, breadth first, for an ambiguity
+    // Returns some if there is an ambiguity (the first node with 2 packed nodes), 
+    // None otherwise
+    pub fn find_ambiguity(&self) ->  Option<EarleyState<'a, T>> {
+
+        
+        let mut queue = VecDeque::<EarleyState<T>>::new();
+        queue.push_back(self.clone());
+
+        while let Some(item) = queue.pop_front() {
+            if item.packed_nodes.len() > 1 {
+                return Some(item);
+            }
+            if item.packed_nodes.len() == 0 {
+                continue;
+            }
+
+            if let Derivation::CompletedFrom { 
+                state: ref next_state 
+            } = item.packed_nodes[0].left_child {
+                queue.push_back(next_state.clone());
+            };
+            
+            if let Some(Derivation::CompletedFrom {
+                state: ref next_state 
+            }) = item.packed_nodes[0].right_child {
+                queue.push_back(next_state.clone());
+            };
+        }
+
+        return None;
+    }
 }
 
 fn earley_state_repr<T: GrammarTrait + 'static>(state: &EarleyState<T>) -> String {
@@ -247,6 +280,7 @@ fn create_sppf<'a, T: GrammarTrait + 'static>(state: &EarleyState<'a, T>, states
                 Derivation::CompletedFrom { state } => queue.push_back(find_state(&state, states).unwrap()),
                 _ => ()
             }
+         
             if let Some(right) = p.right_child {
                 match right {
                     Derivation::CompletedFrom { state } => queue.push_back(find_state(&state, states).unwrap()),

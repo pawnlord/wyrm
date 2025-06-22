@@ -67,10 +67,12 @@ fn main() {
     // println!("{:?}", wasm_file.code_section.functions[59].raw_body.as_slice());
     // println!("{:?}", wasm_file.code_section.functions[59].raw_body.len());
 
-    // let result = earley_parser(wasm_file.code_section.functions[59].raw_body.clone(), &PARSER_GRAMMAR);
+    let result = earley_parser(wasm_file.code_section.functions[59].raw_body.clone(), &PARSER_GRAMMAR);
     
+
     // assert!(result.is_some());
-    // println!("{}", result.is_some());
+    println!("{}", result.is_some());
+    println!("{:?}", result.unwrap().root.find_ambiguity())
     // use AmbigSymbols::*;
     // let sentence = vec![One, Plus, One, Plus, One];
     // println!("TESTING AMBIGUSOUS GRAMMAR");
