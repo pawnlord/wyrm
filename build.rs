@@ -28,6 +28,31 @@ fn value_to_grammar(value: Value) -> String {
     return format!(", {}", sig);
 }
 
+// Special symbols
+pub const SPECIAL_SIMS: [&str; 21] = [
+    "START",
+    "STMT",
+    "STMTS",
+    "INSTR",
+    "TERM_VOID",
+    "TERM_I32",
+    "TERM_I64",
+    "TERM_F32",
+    "TERM_F64",
+    "TERM_LOCAL",
+    "TERM_GLOBAL",
+    "TERM_GENERIC",
+    "TERM_FUNC",
+    "LEB128",
+    "TERM_LEB128",
+    "DWORD",
+    "QWORD",
+    "BYTE",
+    "LOW_BYTE",
+    "HIGH_BYTE",
+    "ADD_I64_OP",
+];
+
 fn main() {
     println!("cargo::rerun-if-changed=instr_table.json");
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -208,6 +233,16 @@ fn main() {
                                             num_symbols, all_symbols,
                                             bytes, lower_bytes, upper_bytes).as_bytes());
 
+        for (i, name) in SPECIAL_SIMS.iter().enumerate() {
+            writer.write(format!("pub const {}: u64 = u64::MAX - {};\n", name, i).as_bytes());
+        }
+
+        // Here we generate an array of the names
+        writer.write(format!("const SPECIAL_SIMS: [&str; {}] = [", SPECIAL_SIMS.len()).as_bytes());
+        for name in SPECIAL_SIMS.iter() {
+            writer.write(format!("\"{}\", ", name).as_bytes());
+        }
+        writer.write("];".as_bytes());
 
     }
 }

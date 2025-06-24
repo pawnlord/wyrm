@@ -754,33 +754,22 @@ pub fn calculate_body_len(expr: &WasmExpr) -> usize {
     total
 }
 
-// Control symbols
-pub const START: u64 = u64::MAX - 1;
-pub const STMT: u64 = u64::MAX - 2;
-pub const STMTS: u64 = u64::MAX - 3;
-pub const INSTR: u64 = u64::MAX - 4;
-pub const TERM_VOID: u64 = u64::MAX - 5;
-pub const TERM_I32: u64 = u64::MAX - 7;
-pub const TERM_I64: u64 = u64::MAX - 8;
-pub const TERM_F32: u64 = u64::MAX - 9;
-pub const TERM_F64: u64 = u64::MAX - 10;
-pub const TERM_LOCAL: u64 = u64::MAX - 11;
-pub const TERM_GLOBAL: u64 = u64::MAX - 12;
-pub const TERM_GENERIC: u64 = u64::MAX - 13;
-pub const TERM_FUNC: u64 = u64::MAX - 14;
-pub const LEB128: u64 = u64::MAX - 15;
-pub const TERM_LEB128: u64 = u64::MAX - 16;
-pub const DWORD: u64 = u64::MAX - 17;
-pub const QWORD: u64 = u64::MAX - 18;
-pub const BYTE: u64 = u64::MAX - 19;
-pub const LOW_BYTE: u64 = u64::MAX - 20;
-pub const HIGH_BYTE: u64 = u64::MAX - 21;
-pub const ADD_I64_OP: u64 = u64::MAX - 22;
-
 impl prs::GrammarTrait for u64 {
     fn start_sym() -> Self {
         START
     }
+
+    // fn to_node_rep(&self) -> String {
+    //     if let Some(name) = get_special_sim(*self) {
+    //         return name;
+    //     }
+
+    //     if let Some(instr) = get_instr_from_op(*self) {
+    //         return instr.name.to_string();
+    //     }
+
+    //     return self.to_string();
+    // }
 }
 
 impl WasmFile {
