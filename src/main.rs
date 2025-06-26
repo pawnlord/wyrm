@@ -25,7 +25,6 @@ mod parser;
     
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum AmbigSymbols {
-    P,
     S,
     Plus,
     One,
@@ -33,12 +32,11 @@ pub enum AmbigSymbols {
 
 impl prs::GrammarTrait for AmbigSymbols {
     fn start_sym() -> Self {
-        Self::P
+        Self::S
     }
 }
 
 const AMBIGUOUS_GRAMMAR: prs::Grammar<AmbigSymbols> = prs::Grammar::<AmbigSymbols>::new(&[
-    user_rule!(AmbigSymbols, P, &[S]),
     user_rule!(AmbigSymbols, S, &[S, Plus, S], &[One]),
 ]);
 
@@ -63,20 +61,23 @@ fn main() {
 
 
     let wasm_file = file_reader::wasm_deserialize(file).unwrap();
-    println!("{:}", emit_wat(&wasm_file));
-    println!("{:?}", wasm_file.code_section.functions[0].raw_body.as_slice());
-    println!("{:?}", wasm_file.code_section.functions[0].raw_body.len());
+    // println!("{:}", emit_wat(&wasm_file));
+    // println!("{:?}", wasm_file.code_section.functions[0].raw_body.as_slice());
+    // println!("{:?}", wasm_file.code_section.functions[0].raw_body.len());
 
-    let result = earley_parser(wasm_file.code_section.functions[0].raw_body.clone(), &PARSER_GRAMMAR);
+    // let result = earley_parser(wasm_file.code_section.functions[0].raw_body.clone(), &PARSER_GRAMMAR);
     
 
-    // assert!(result.is_some());
-    println!("{}", result.is_some());
-    println!("{:?}", result.unwrap().root.find_ambiguity())
-    // use AmbigSymbols::*;
-    // let sentence = vec![One, Plus, One, Plus, One];
-    // println!("TESTING AMBIGUSOUS GRAMMAR");
-    // let result = earley_parser(sentence, &AMBIGUOUS_GRAMMAR);
-    // assert!(result.is_some());
-    // print_earley_states(&result.unwrap().states, &AMBIGUOUS_GRAMMAR, 0, |x| debug!("{}", x));
+    // // assert!(result.is_some());
+    // println!("{}", result.is_some());
+    // let sppf = result.unwrap();
+    // println!("{:?}", sppf.root.find_ambiguity(&sppf.states));
+    use AmbigSymbols::*;
+    let sentence = vec![One, Plus, One, Plus, One];
+    println!("TESTING AMBIGUSOUS GRAMMAR");
+    let result = earley_parser(sentence, &AMBIGUOUS_GRAMMAR);
+    assert!(result.is_some());
+    let result = result.unwrap();
+    assert!(result.root.find_ambiguity(&result.states).is_some());
+    print_earley_states(&result.states, &AMBIGUOUS_GRAMMAR, 0, |x| debug!("{}", x));
 }

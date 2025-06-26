@@ -759,17 +759,17 @@ impl prs::GrammarTrait for u64 {
         START
     }
 
-    // fn to_node_rep(&self) -> String {
-    //     if let Some(name) = get_special_sim(*self) {
-    //         return name;
-    //     }
+    fn to_node_rep(&self) -> String {
+        if let Some(name) = get_special_sim(*self) {
+            return name;
+        }
 
-    //     if let Some(instr) = get_instr_from_op(*self) {
-    //         return instr.name.to_string();
-    //     }
+        if let Some(instr) = get_instr_from_op(*self) {
+            return instr.name.to_string();
+        }
 
-    //     return self.to_string();
-    // }
+        return self.to_string();
+    }
 }
 
 impl WasmFile {
