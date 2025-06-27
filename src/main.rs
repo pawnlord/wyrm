@@ -2,13 +2,15 @@
 use std::fs::File;
 
 
+use dot2::{GraphWalk, Labeller};
 use log::debug;
 use wasm_model::WasmIdiomPattern;
 
 use crate::instr_table::INSTRS;
+use crate::parser::prs::Derivation;
 use crate::wat_emitter::emit_wat;
 use std::env;
-use prs::{earley_parser, print_earley_states, user_rule};
+use prs::{earley_parser, print_earley_states, user_rule, GrammarTrait};
 use crate::parser::*;
 use crate::wasm_parser::PARSER_GRAMMAR;
 use simple_logger::SimpleLogger;
@@ -61,23 +63,51 @@ fn main() {
 
 
     let wasm_file = file_reader::wasm_deserialize(file).unwrap();
-    // println!("{:}", emit_wat(&wasm_file));
-    // println!("{:?}", wasm_file.code_section.functions[0].raw_body.as_slice());
-    // println!("{:?}", wasm_file.code_section.functions[0].raw_body.len());
+    println!("{:}", emit_wat(&wasm_file));
 
-    // let result = earley_parser(wasm_file.code_section.functions[0].raw_body.clone(), &PARSER_GRAMMAR);
+    let result = earley_parser(wasm_file.code_section.functions[2].raw_body.clone(), &PARSER_GRAMMAR);
     
 
-    // // assert!(result.is_some());
-    // println!("{}", result.is_some());
+    // assert!(result.is_some());
+    println!("{}", result.is_some());
+    let sppf = result.unwrap();
+    println!("{:?}", sppf.root.find_ambiguity(&sppf.states));
+    let mut f = std::fs::File::create("example2.dot").unwrap();
+    let tree = sppf.to_tree();
+    println!("{:?}", wasm_file.code_section.functions[2].raw_body.len());
+
+
+    
+    // use AmbigSymbols::*;
+    // let sentence = vec![One, Plus, One, Plus, One];
+    // println!("TESTING AMBIGUSOUS GRAMMAR");  
+    // let result = earley_parser(sentence, &AMBIGUOUS_GRAMMAR);
+    // assert!(result.is_some());
     // let sppf = result.unwrap();
-    // println!("{:?}", sppf.root.find_ambiguity(&sppf.states));
-    use AmbigSymbols::*;
-    let sentence = vec![One, Plus, One, Plus, One];
-    println!("TESTING AMBIGUSOUS GRAMMAR");
-    let result = earley_parser(sentence, &AMBIGUOUS_GRAMMAR);
-    assert!(result.is_some());
-    let result = result.unwrap();
-    assert!(result.root.find_ambiguity(&result.states).is_some());
-    print_earley_states(&result.states, &AMBIGUOUS_GRAMMAR, 0, |x| debug!("{}", x));
+    // assert!(sppf.root.find_ambiguity(&sppf.states).is_some());
+    // print_earley_states(&sppf.states, &AMBIGUOUS_GRAMMAR, 0, |x| debug!("{}", x));
+oh    
+    // for d in tree.nodes().iter() {
+    //     match d {
+    //         Derivation::CompletedFrom {state: s} => {
+    //             debug!("d: {}", prs::earley_state_id(s));
+    //         },
+    //         Derivation::ScannedFrom { 
+    //             symbol, idx
+    //         }  => {
+    //             // Scanned can never be the root
+    //             let deriv = Derivation::ScannedFrom { symbol: symbol.clone(), idx: *idx };
+    //             let edge = tree.edges.iter().find(|e| e.1 == deriv).unwrap();
+    //             let parent_sym = if let Derivation::CompletedFrom { state } = &edge.0 {
+    //                 Some(state.from.clone())
+    //             } else {
+    //                 None
+    //             };
+    //             debug!("N{}_{}", symbol.to_node_rep(parent_sym), idx);
+    //         },
+    //     }
+    // }
+
+    dot2::render(&tree, &mut f).unwrap();
+
 }

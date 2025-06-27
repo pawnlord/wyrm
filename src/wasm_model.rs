@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    instr_table::*,
+    instr_table::{self, *},
     parser::prs
 };
 
@@ -759,15 +759,21 @@ impl prs::GrammarTrait for u64 {
         START
     }
 
-    fn to_node_rep(&self) -> String {
+    fn to_node_rep(&self, parent_sym: Option<Self>) -> String {
         if let Some(name) = get_special_sim(*self) {
             return name;
         }
 
         if let Some(instr) = get_instr_from_op(*self) {
-            return instr.name.to_string();
-        }
+            if parent_sym.is_none() {
+                return instr.name.to_string().replace(".", "_");
+            }
 
+            if let Some(instr_table::INSTR) = parent_sym {
+                return instr.name.to_string().replace(".", "_");
+            }
+        }
+        
         return self.to_string();
     }
 }

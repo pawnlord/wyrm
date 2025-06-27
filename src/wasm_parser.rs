@@ -8,7 +8,7 @@ use crate::{
 
 pub const PARSER_GRAMMAR: prs::Grammar<u64> = prs::Grammar::<u64>::new(&[
     prs::rule!(u64, START, &[STMTS]),
-    prs::rule!(u64, STMTS, &[STMT], &[STMTS, STMT]),
+    prs::rule!(u64, STMTS, &[STMT], &[STMT, STMTS]),
     prs::rule!(u64, STMT, &[ADD_I64_OP], &[INSTR]),
     prs::term_rule!(u64, INSTR, all_symbols),
     prs::rule!(u64, TERM_VOID, &[BYTE]),

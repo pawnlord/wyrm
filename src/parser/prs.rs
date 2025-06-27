@@ -6,7 +6,8 @@ use log::debug;
 pub trait GrammarTrait: Hash + PartialEq + Eq + Clone + Debug {
     fn start_sym() -> Self;
     
-    fn to_node_rep(&self) -> String {
+    
+    fn to_node_rep(&self, parent_sym: Option<Self>) -> String {
         format!("{:?}", self).to_string()
     }
 }
@@ -69,7 +70,7 @@ pub struct PackedNode<'a, T: GrammarTrait + 'static> {
 
 #[derive(Clone, Debug)]
 pub struct EarleyState<'a, T: GrammarTrait + 'static> {
-    from: T,
+    pub from: T,
     to: &'a [T],
     origin: usize,
     end: usize,
@@ -188,15 +189,25 @@ impl<'a, T: GrammarTrait + 'static> EarleyState<'a, T> {
     }
 }
 
-fn earley_state_repr<T: GrammarTrait + 'static>(state: &EarleyState<T>) -> String {
+pub fn earley_state_id<T: GrammarTrait + 'static>(state: &EarleyState<T>) -> String {
     let mut repr = "".to_string();
-    repr += format!("{} -> ", state.from.to_node_rep()).as_str();
-    for i in 0..state.idx {
-        repr += format!("{} ", state.to[i].to_node_rep()).as_str();
+    repr += format!("{}_", state.from.to_node_rep(None)).as_str();
+    for i in 0..state.to.len() {
+        repr += format!("{}_", state.to[i].to_node_rep(None)).as_str();
     }
-    repr += format!("*").as_str();
+    repr += format!("{}_{}_{}", state.origin, state.end, state.idx).as_str();
+    repr
+}
+
+pub fn earley_state_repr<T: GrammarTrait + 'static>(state: &EarleyState<T>) -> String {
+    let mut repr = "".to_string();
+    repr += format!("{} -> ", state.from.to_node_rep(None)).as_str();
+    for i in 0..state.idx {
+        repr += format!("{} ", state.to[i].to_node_rep(None)).as_str();
+    }
+    repr += format!("*").as_str();  
     for i in state.idx..state.to.len() {
-        repr += format!(" {}", state.to[i].to_node_rep()).as_str();
+        repr += format!(" {}", state.to[i].to_node_rep(None)).as_str();
     }
     repr += format!(", {}, {}", state.origin, state.end).as_str();
     repr
@@ -221,7 +232,7 @@ pub fn print_earley_states<T: GrammarTrait + 'static, F>(states: &States<T>, _gr
                         earley_state_repr(state)
                     },
                     Derivation::ScannedFrom { symbol, idx } => {
-                        format!("{} @ {}", symbol.to_node_rep(), idx)
+                        format!("{} @ {}", symbol.to_node_rep(None), idx)
                     }
                 }.as_str();
 
@@ -232,7 +243,7 @@ pub fn print_earley_states<T: GrammarTrait + 'static, F>(states: &States<T>, _gr
                             earley_state_repr(state)
                         },
                         Derivation::ScannedFrom { symbol, idx } => {
-                            format!(" & {:?} @ {}", symbol.to_node_rep(), idx)
+                            format!(" & {:?} @ {}", symbol.to_node_rep(None), idx)
                         }
                     }.as_str();
                 }
@@ -251,6 +262,15 @@ type States<'a, T> = HashMap<EarleyState<'a, T>, Children<'a, T>>;
 pub struct EarleySppf<'a, T: GrammarTrait + 'static> {
     pub states: States<'a, T>,
     pub root: EarleyState<'a, T>
+}
+
+
+type TreeEdges<'a, T> = Vec<(Derivation<'a, T>, Derivation<'a, T>)>;
+
+#[derive(Debug)]
+pub struct EarleyTree<'a, T: GrammarTrait + 'static> {
+    pub edges: TreeEdges<'a, T>,
+    pub root: Derivation<'a, T>
 }
 
 
@@ -281,7 +301,6 @@ fn create_sppf<'a, T: GrammarTrait + 'static>(start_state: &EarleyState<'a, T>, 
         for p in &item_packed_nodes {
             match &p.left_child {
                 Derivation::CompletedFrom { state } => {
-                    // println!("{:?} {:?}", state.from.to_node_rep(), state);
                     queue.push_back(state.clone());
                 },
                 _ => ()
@@ -290,7 +309,6 @@ fn create_sppf<'a, T: GrammarTrait + 'static>(start_state: &EarleyState<'a, T>, 
             if let Some(right) = &p.right_child {
                 match right {
                     Derivation::CompletedFrom { state } => {
-                        // println!("{:?} {:?}", state.from.to_node_rep(), state);
                         queue.push_back(state.clone());
                     },
                     _ => ()
@@ -303,6 +321,74 @@ fn create_sppf<'a, T: GrammarTrait + 'static>(start_state: &EarleyState<'a, T>, 
     EarleySppf::<'a, T> {
         states: new_states,
         root: start_state.clone()
+    }
+}
+
+impl<'a, T: GrammarTrait + 'static> EarleySppf<'a, T> {
+    pub fn to_tree(&self) -> EarleyTree<'_, T> {
+        let mut tree_states: TreeEdges<'a, T> = TreeEdges::<'a, T>::new();
+        let mut queue = VecDeque::<EarleyState<T>>::new();
+        let root_state = Derivation::CompletedFrom {
+            state: self.root.clone()
+        };
+
+        queue.push_back(self.root.clone());
+
+        while let Some(item) = queue.pop_front() {
+            let deriv = Derivation::CompletedFrom { state: item.clone() };
+            let new_node = self.states.get(&item)
+                .expect("Root of SPPF not found in states");
+            
+            if new_node.len() == 0 {
+                continue;
+            }
+
+            let packed_node = &new_node[0];
+
+            
+
+            match &packed_node.left_child {
+                Derivation::CompletedFrom {state: next_state } => {
+                    if next_state.idx != 0 {
+                        queue.push_back(next_state.clone());
+                        tree_states.push((deriv.clone(), Derivation::CompletedFrom {
+                            state: next_state.clone() 
+                        }));
+                    }
+                },
+                Derivation::ScannedFrom {symbol, idx } => {
+                    tree_states.push((deriv.clone(), Derivation::ScannedFrom {
+                        idx: *idx, symbol: symbol.clone()
+                    }));
+                },
+                _ => {}
+            }
+            
+            match &packed_node.right_child {
+                Some(Derivation::CompletedFrom {
+                    state: next_state 
+                }) => {
+                    queue.push_back(next_state.clone());
+                    tree_states.push((deriv.clone(), Derivation::CompletedFrom {
+                        state: next_state.clone() 
+                    }));
+                },
+                Some(Derivation::ScannedFrom {
+                    symbol, idx 
+                }) => {
+                    tree_states.push((deriv.clone(), Derivation::ScannedFrom {
+                        idx: *idx, symbol: symbol.clone()
+                    }));
+                },
+                _ => {}
+            }
+
+        }
+
+        EarleyTree {
+            edges: tree_states,
+            root: root_state
+        }
     }
 }
 
@@ -405,9 +491,9 @@ pub fn earley_parser<'a, T: GrammarTrait + 'static>(sentence: Vec<T>, grammar: &
             }
         }
 
-        debug!("states {}", i);
-        debug!("------------------------");
-        print_earley_states(&states[i], grammar, i, |x| debug!("{}", x));
+        // debug!("states {}", i);
+        // debug!("------------------------");
+        // print_earley_states(&states[i], grammar, i, |x| debug!("{}", x));
     }
 
     let start_rule = grammar.get_rules(T::start_sym())[0].right_hand[0];
